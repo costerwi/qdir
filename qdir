@@ -1,0 +1,159 @@
+#!/bin/env python3
+"""This is a simple first-in, first-out sequential job queue for the local machine.
+
+The queue is maintained as a directory of job queue files.
+A job will execute once all of the preceeding job queue files are deleted.
+A finished job will delete its own job queue file which signals the next job to begin.
+Users may manually delete job queue files to skip or terminate their corresponding jobs.
+
+Multiple users may share the same queue directory to ensure one job is executed at a time among the group of users.
+The default queue directory is /var/spool/qdir but any convenient directory may be selected by defining the QDIR environment variable.
+
+The following shell commands prepare the default directory for group "users":
+    QDIR=/var/spool/qdir
+    sudo mkdir $QDIR
+    sudo chgrp users $QDIR
+    sudo chmod g+w $QDIR
+
+Usage:
+    # List the currently queued jobs:
+    qdir
+    # Add a job to the queue:
+    qdir cmd [with optional arguments]
+
+Carl Osterwisch, January 2024
+"""
+
+import os
+from os.path import exists
+import pwd
+from pathlib import Path
+from signal import signal, SIGTERM
+import subprocess
+import sys
+from time import sleep
+
+qdir = Path(os.environ.get("QDIR", "/var/spool/qdir"))
+if not qdir.is_dir():
+    sys.exit(f"ERROR: The QDIR directory {qdir} does not exist")
+if not os.access(qdir, os.W_OK):
+    sys.exit(f"ERROR: The QDIR directory {qdir} is not writable")
+
+interval = int(os.environ.get("QDIR_POLL_INTERVAL", 10))
+if not interval > 0:
+    sys.exit(f"The QDIR_POLL_INTERVAL {interval} must be seconds greater than 0")
+
+# collect set of active process Ids
+if os.name == "nt":
+    cmd = "WMIC process get processid"
+else:
+    cmd = ["pgrep", "python"]
+processIds = {
+    pid
+    for pid in subprocess.check_output(cmd, universal_newlines=True).split()
+    if pid.isnumeric()
+}
+
+
+def verifyJobExists(entry):
+    """Verify each job in queue still has a watching process"""
+    if entry.name in processIds:
+        return True
+    print("Removing stale job", entry.name, file=sys.stderr)
+    try:
+        os.unlink(entry.path)
+    except OSError as e:
+        print(e, file=sys.stderr)
+
+
+# create list of currently queued jobs, sorted by creation time
+previousJobs = list(
+    filter(
+        verifyJobExists,
+        sorted(
+            [
+                entry
+                for entry in os.scandir(qdir)
+                if entry.is_file() and entry.name.isnumeric()
+            ],
+            key=lambda entry: entry.stat().st_ctime_ns,
+        ),
+    )
+)
+
+if len(sys.argv) < 2:
+    # list queued jobs if no argument provided
+    print("Queue directory", qdir)
+    for n, entry in enumerate(previousJobs):
+        user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
+        try:
+            with open(entry.path) as f:
+                cmd = f.readline().strip()
+        except Exception:
+            cmd = ""
+        print(n, entry.name, user, cmd, sep="\t")
+    if not previousJobs:
+        print("No jobs queued")
+    sys.exit(0)
+
+# fork to background
+if os.fork():  # TODO windows
+    os._exit(0)
+
+job = None
+
+
+def terminateJob(sig, frame):
+    "Pass SIGTERM signal to all child processes in this process group"
+    global job
+    if job:
+        try:
+            os.killpg(os.getpgid(job.pid), SIGTERM)
+        except ProcessLookupError:
+            pass
+        job = None
+
+
+signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
+
+pid = str(os.getpid())
+with open(qdir / pid, "w") as jobFile:
+    print(jobFile.name, flush=True)
+    os.close(sys.stdout.fileno())
+    sys.stdout = open(os.devnull, "w")
+
+    cmd = " ".join(sys.argv[1:])
+    print(cmd, file=jobFile)
+    os.environ["QDIR_FILE"] = jobFile.name
+    if previousJobs:
+        print(
+            "Queued behind",
+            " ".join([entity.name for entity in previousJobs]),
+            file=jobFile,
+            flush=True,
+        )
+    previousJobs.reverse()  # most often checking for completion of newest job
+    while exists(jobFile.name) and any(
+        map(exists, [entity.path for entity in previousJobs])
+    ):
+        sleep(interval)
+    if exists(jobFile.name):
+        print("Running now", file=jobFile, flush=True)
+        with open(Path(sys.argv[1]).stem + f"._{pid}", "w") as logFile:
+            try:
+                job = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    start_new_session=True,
+                    stdout=logFile,
+                    stderr=subprocess.STDOUT,
+                )
+                while job.poll() is None and exists(jobFile.name):
+                    sleep(interval)
+            except Exception as e:
+                print(e, file=logFile)
+
+terminateJob(SIGTERM, None)
+if exists(jobFile.name):
+    os.unlink(jobFile.name)
+print(pid, "Done", cmd, sep="\t", file=sys.stderr)
