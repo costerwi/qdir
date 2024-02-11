@@ -55,31 +55,21 @@ processIds = {
 }
 
 
-def verifyJobExists(entry):
-    """Verify each job in queue still has a watching process"""
-    if entry.name in processIds:
-        return True
-    print("Removing stale job", entry.name, file=sys.stderr)
-    try:
-        os.unlink(entry.path)
-    except OSError as e:
-        print(e, file=sys.stderr)
+def is_jobFile(entry):
+    """Verify the entry is an active job file with a watching process"""
+    if entry.name.isnumeric() and entry.is_file():
+        if entry.name in processIds:
+            return True
+        print("Removing stale job", entry.name, file=sys.stderr)
+        try:
+            os.unlink(entry.path)
+        except OSError as e:
+            print(e, file=sys.stderr)
 
 
-# create list of currently queued jobs, sorted by creation time
-previousJobs = list(
-    filter(
-        verifyJobExists,
-        sorted(
-            [
-                entry
-                for entry in os.scandir(qdir)
-                if entry.is_file() and entry.name.isnumeric()
-            ],
-            key=lambda entry: entry.stat().st_ctime_ns,
-        ),
-    )
-)
+# create list of currently queued jobs, sorted oldest to newest
+previousJobs = [entry for entry in os.scandir(qdir) if is_jobFile(entry)]
+previousJobs.sort(key=lambda entry: entry.stat().st_mtime_ns)
 
 if len(sys.argv) < 2:
     # list queued jobs if no argument provided
