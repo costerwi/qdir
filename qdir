@@ -72,7 +72,7 @@ previousJobs = [entry for entry in os.scandir(qdir) if is_jobFile(entry)]
 previousJobs.sort(key=lambda entry: entry.stat().st_mtime_ns)
 
 if len(sys.argv) < 2:
-    # list queued jobs if no argument provided
+    # list queued jobs and exit if no argument provided
     print("Queue directory", qdir)
     for n, entry in enumerate(previousJobs):
         user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
@@ -110,11 +110,11 @@ pid = str(os.getpid())
 with open(qdir / pid, "w") as jobFile:
     os.environ["QDIR_FILE"] = jobFile.name  # exported to cmd
     print(jobFile.name, flush=True)
-    os.close(sys.stdout.fileno())
-    sys.stdout = open(os.devnull, "w")
+    os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
+    sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
     cmd = " ".join(sys.argv[1:])
-    print(cmd, file=jobFile)
+    print(cmd, file=jobFile)  # for information only
     if previousJobs:
         print(
             "Queued behind",
@@ -122,14 +122,14 @@ with open(qdir / pid, "w") as jobFile:
             file=jobFile,
             flush=True,
         )
-    previousJobs.reverse()  # most often checking for completion of newest job
-    while exists(jobFile.name) and any(
+    previousJobs.reverse()  # check newest jobs first
+    while exists(jobFile.name) and any(  # wait for all previousJobs to complete
         map(exists, [entity.path for entity in previousJobs])
     ):
         sleep(interval)
     if exists(jobFile.name):
-        print("Running now", file=jobFile, flush=True)
-        with open(Path(sys.argv[1]).stem + f"._{pid}", "w") as logFile:
+        logName = Path(cmd.split()[0]).stem + "._" + pid
+        with open(logName, "w") as logFile:
             try:
                 job = subprocess.Popen(
                     cmd,
