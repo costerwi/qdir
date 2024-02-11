@@ -108,13 +108,13 @@ signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
 
 pid = str(os.getpid())
 with open(qdir / pid, "w") as jobFile:
+    os.environ["QDIR_FILE"] = jobFile.name  # exported to cmd
     print(jobFile.name, flush=True)
     os.close(sys.stdout.fileno())
     sys.stdout = open(os.devnull, "w")
 
     cmd = " ".join(sys.argv[1:])
     print(cmd, file=jobFile)
-    os.environ["QDIR_FILE"] = jobFile.name
     if previousJobs:
         print(
             "Queued behind",
