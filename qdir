@@ -43,6 +43,8 @@ interval = int(os.environ.get("QDIR_POLL_INTERVAL", 10))
 if not interval > 0:
     sys.exit(f"The QDIR_POLL_INTERVAL {interval} must be seconds greater than 0")
 
+verbose = int(os.environ.get("QDIR_VERBOSE", 2))
+
 # collect set of active process Ids
 if os.name == "nt":
     cmd = "WMIC process get processid"
@@ -96,37 +98,44 @@ if len(sys.argv) < 2:
 if os.fork():  # TODO windows
     os._exit(0)
 
-job = None
-
+jobId = str(os.getpid())  # process id of this script
+cmd = " ".join(sys.argv[1:])  # command to be executed
+job = None  # subprocess running the cmd, if any
 
 def terminateJob(sig=None, frame=None):
     "Pass SIGTERM signal to all child processes in this process group"
     global job
-    if job:
+    result = ""
+    if hasattr(job, 'pid'):
         try:
             os.killpg(os.getpgid(job.pid), SIGTERM)
+            if verbose >= 2:
+                result = "Killed"
         except ProcessLookupError:
-            pass
-        job = None
+            if verbose >= 1:
+                result = "Done"
+        job = 'done'
+    elif job == None and verbose >= 2:
+        result = "Dequeued"
+    if result:
+        print(jobId, result, cmd, sep="\t", file=sys.stderr)
 
 
 signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
 
-pid = str(os.getpid())
-with open(qdir / pid, "w") as jobFile:
-    os.environ["QDIR_FILE"] = jobFile.name  # exported to cmd
-    print(jobFile.name, flush=True)
+# Create the job file in queue directory
+with open(qdir / jobId, "w") as jobFile:
+    os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
+    print(jobFile.name)
     os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
     sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
-    cmd = " ".join(sys.argv[1:])
     print(cmd, file=jobFile)  # for information only
     if previousJobs:
         print(
             "Queued behind",
             " ".join([entity.name for entity in previousJobs]),
             file=jobFile,
-            flush=True,
         )
 
 # Wait for all previousJobs to complete
@@ -157,4 +166,3 @@ if exists(jobFile.name):
 terminateJob()
 if exists(jobFile.name):
     os.unlink(jobFile.name)
-print(pid, "Done", cmd, sep="\t", file=sys.stderr)
