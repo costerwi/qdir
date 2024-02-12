@@ -1,5 +1,5 @@
 #!/bin/env python3
-"""This is a simple first-in, first-out sequential job queue for the local machine.
+"""Implements first-in, first-out sequential job queue for the local machine.
 
 The queue is maintained as a directory of job queue files.
 A job will execute once all of the preceeding job queue files are deleted.
@@ -16,10 +16,14 @@ The following shell commands prepare the default directory for group "users":
     sudo chmod g+w $QDIR
 
 Usage:
-    # List the currently queued jobs:
-    qdir
     # Add a job to the queue:
     qdir cmd [with optional arguments]
+    # List the currently queued jobs:
+    qdir
+    # Dequeue a job or terminate its execution
+    kill jobId
+    # or
+    rm /var/spool/qdir/jobId
 
 Carl Osterwisch, January 2024
 """
@@ -118,13 +122,14 @@ with open(qdir / jobId, "w") as jobFile:
         )
 
 def terminateJob(sig=None, frame=None):
-    "Pass SIGTERM signal to all child processes in this process group"
+    """Terminate this job if running or dequeue if not"""
     global job
     result = ""
     if exists(jobFile.name):
         os.unlink(jobFile.name)  # remove job file
     if hasattr(job, 'pid'):  # job is or was running
         try:
+            # pass SIGTERM signal to all child processes in this process group
             os.killpg(os.getpgid(job.pid), SIGTERM)
             if verbose >= 2:
                 result = "Killed"
@@ -150,7 +155,7 @@ while exists(jobFile.name) and any(
 ):
     sleep(interval)
 
-# Launch the cmd if it is still in queue
+# Launch the cmd if jobFile is still in queue
 if exists(jobFile.name):
     logName = Path(cmd.split()[0]).stem + "._" + jobId
     with open(logName, "w") as logFile:
