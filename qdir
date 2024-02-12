@@ -102,11 +102,28 @@ jobId = str(os.getpid())  # process id of this script
 cmd = " ".join(sys.argv[1:])  # command to be executed
 job = None  # subprocess running the cmd, if any
 
+# Create the job file in queue directory
+with open(qdir / jobId, "w") as jobFile:
+    os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
+    print(jobFile.name)
+    os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
+    sys.stdout = open(os.devnull, "w")  # block further printing to stdout
+
+    print(cmd, file=jobFile)  # for information only
+    if previousJobs:
+        print(
+            "Queued behind",
+            " ".join([entity.name for entity in previousJobs]),
+            file=jobFile,
+        )
+
 def terminateJob(sig=None, frame=None):
     "Pass SIGTERM signal to all child processes in this process group"
     global job
     result = ""
-    if hasattr(job, 'pid'):
+    if exists(jobFile.name):
+        os.unlink(jobFile.name)  # remove job file
+    if hasattr(job, 'pid'):  # job is or was running
         try:
             os.killpg(os.getpgid(job.pid), SIGTERM)
             if verbose >= 2:
@@ -122,21 +139,6 @@ def terminateJob(sig=None, frame=None):
 
 
 signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
-
-# Create the job file in queue directory
-with open(qdir / jobId, "w") as jobFile:
-    os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
-    print(jobFile.name)
-    os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
-    sys.stdout = open(os.devnull, "w")  # block further printing to stdout
-
-    print(cmd, file=jobFile)  # for information only
-    if previousJobs:
-        print(
-            "Queued behind",
-            " ".join([entity.name for entity in previousJobs]),
-            file=jobFile,
-        )
 
 # Wait for all previousJobs to complete
 previousJobs.reverse()  # check newest jobs first
@@ -164,5 +166,3 @@ if exists(jobFile.name):
 
 # Clean up
 terminateJob()
-if exists(jobFile.name):
-    os.unlink(jobFile.name)
