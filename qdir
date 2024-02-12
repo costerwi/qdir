@@ -68,8 +68,8 @@ def is_jobFile(entry):
 
 
 # create list of currently queued jobs, sorted oldest to newest
-previousJobs = [entry for entry in os.scandir(qdir) if is_jobFile(entry)]
-previousJobs.sort(key=lambda entry: entry.stat().st_mtime_ns)
+previousJobs = sorted(os.scandir(qdir), key=lambda entry: entry.stat().st_mtime_ns)
+previousJobs = [entry for entry in previousJobs if is_jobFile(entry)]
 
 if len(sys.argv) < 2:
     # list queued jobs and exit if no argument provided
