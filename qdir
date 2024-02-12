@@ -55,12 +55,23 @@ processIds = {
 }
 
 
+def job_info(entry):
+    """Return user and command to be run by the entry or empty string"""
+    user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
+    try:
+        with open(entry.path) as f:
+            cmd = f.readline().strip()
+    except Exception:
+        cmd = ""
+    return "\t".join([entry.name, user, cmd])
+
+
 def is_jobFile(entry):
     """Verify the entry is an active job file with a watching process"""
     if entry.name.isnumeric() and entry.is_file():
         if entry.name in processIds:
             return True
-        print("Removing stale job", entry.name, file=sys.stderr)
+        print("Removing stale job", job_info(entry), sep="\t", file=sys.stderr)
         try:
             os.unlink(entry.path)
         except OSError as e:
@@ -76,12 +87,7 @@ if len(sys.argv) < 2:
     print("Queue directory", qdir)
     for n, entry in enumerate(previousJobs):
         user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
-        try:
-            with open(entry.path) as f:
-                cmd = f.readline().strip()
-        except Exception:
-            cmd = ""
-        print(n, entry.name, user, cmd, sep="\t")
+        print(n, job_info(entry), sep="\t")
     if not previousJobs:
         print("No jobs queued")
     sys.exit(0)
