@@ -130,12 +130,15 @@ def terminateJob(sig=None, frame=None):
                 result = "Killed"
         except ProcessLookupError:
             if verbose >= 1:
-                result = "Done"
-        job = 'done'
-    elif job == None and verbose >= 2:
+                if job.returncode is None or job.returncode <= 0:
+                    result = "Done"
+                else:
+                    result = "Error"
+    elif job is None and verbose >= 2:
         result = "Dequeued"
     if result:
         print(jobId, result, cmd, sep="\t", file=sys.stderr)
+        job = result  # don't report result again
 
 
 signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
@@ -159,7 +162,7 @@ if exists(jobFile.name):
                 stdout=logFile,
                 stderr=subprocess.STDOUT,
             )
-            while job.poll() is None and exists(jobFile.name):
+            while exists(jobFile.name) and job.poll() is None:
                 sleep(interval)
         except Exception as e:
             print(e, file=logFile)
