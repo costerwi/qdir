@@ -91,11 +91,13 @@ previousJobs = [entry for entry in previousJobs if is_jobFile(entry)]
 if len(sys.argv) < 2:
     # list queued jobs and exit if no argument provided
     print("Queue directory", qdir)
-    for n, entry in enumerate(previousJobs):
-        user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
-        print(n, job_info(entry), sep="\t")
     if not previousJobs:
         print("No jobs queued")
+    else:
+        print("Order", "JobId", "User", "Command", sep="\t")
+        for n, entry in enumerate(previousJobs):
+            user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
+            print(n, job_info(entry), sep="\t")
     sys.exit(0)
 
 # fork to background
