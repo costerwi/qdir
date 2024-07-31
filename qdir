@@ -31,7 +31,7 @@ Carl Osterwisch, January 2024
 import os
 from os.path import exists
 from pathlib import Path
-from signal import signal, SIGTERM
+import signal
 import subprocess
 import sys
 from time import sleep
@@ -51,16 +51,27 @@ if not interval > 0:
 
 verbose = int(os.environ.get("QDIR_VERBOSE", 2))
 
-# collect set of active process Ids
-if os.name == "nt":
-    cmd = "WMIC process get processid"
+if os.name == 'nt':
+    import win32security
+    def winOwner(self):
+        sd = win32security.GetFileSecurity(str(self), win32security.OWNER_SECURITY_INFORMATION)
+        owner_sid = sd.GetSecurityDescriptorOwner()
+        name, domain, type = win32security.LookupAccountSid(None, owner_sid)
+        return name
+    try:
+        owner = qdir.owner()
+    except NotImplementedError:
+        Path.owner = winOwner  # monkey patch if needed
+
+    import win32process
+    processIds = set(str(pid) for pid in win32process.EnumProcesses())
 else:
     cmd = ["pgrep", "python"]
-processIds = {
-    pid
-    for pid in subprocess.check_output(cmd, universal_newlines=True).split()
-    if pid.isnumeric()
-}
+    processIds = {
+        pid
+        for pid in subprocess.check_output(cmd, universal_newlines=True).split()
+        if pid.isnumeric()
+    }
 
 
 def job_info(entry):
@@ -100,9 +111,10 @@ if len(sys.argv) < 2:
             print(n, *job_info(entry), sep="\t")
     sys.exit(0)
 
-# fork to background
-if os.fork():  # TODO windows
-    os._exit(0)
+if os.name == "posix":
+    # fork to background TODO windows
+    if os.fork():
+        os._exit(0)
 
 jobId = str(os.getpid())  # process id of this script
 cmd = " ".join(sys.argv[1:])  # command to be executed
@@ -130,17 +142,24 @@ def terminateJob(sig=None, frame=None):
     if exists(jobFile.name):
         os.unlink(jobFile.name)  # remove job file
     if hasattr(job, 'pid'):  # job is or was running
-        try:
-            # pass SIGTERM signal to all child processes in this process group
-            os.killpg(os.getpgid(job.pid), SIGTERM)
+        if job.poll() is None:
             if verbose >= 2:
                 result = "Killed"
-        except ProcessLookupError:
-            if verbose >= 1:
-                if job.returncode is None or job.returncode <= 0:
-                    result = "Done"
-                else:
-                    result = "Error"
+            if os.name == "posix":
+                # pass SIGTERM signal to all child processes in this process group
+                try:
+                    os.killpg(os.getpgid(job.pid), signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            else:
+                job.send_signal(signal.CTRL_BREAK_EVENT)
+                sleep(interval)
+                job.terminate()
+        elif verbose >= 1:
+            if job.returncode <= 0:
+                result = "Done"
+            else:
+                result = "Error"
     elif job is None and verbose >= 2:
         result = "Dequeued"
     if result:
@@ -148,7 +167,7 @@ def terminateJob(sig=None, frame=None):
         job = result  # don't report result again
 
 
-signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
+signal.signal(signal.SIGTERM, terminateJob)  # assign handler for SIGTERM
 
 # Wait for all previousJobs to complete
 previousJobs.reverse()  # check newest jobs first
@@ -159,6 +178,9 @@ while exists(jobFile.name) and any(entry.exists() for entry in previousJobs):
 if exists(jobFile.name):
     logName = Path(cmd.split()[0]).stem + "._" + jobId
     with open(logName, "w") as logFile:
+        options = {}
+        if os.name == "nt":
+            options['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
         try:
             job = subprocess.Popen(
                 cmd,
@@ -166,6 +188,7 @@ if exists(jobFile.name):
                 start_new_session=True,
                 stdout=logFile,
                 stderr=subprocess.STDOUT,
+                **options,
             )
             while exists(jobFile.name) and job.poll() is None:
                 sleep(interval)
