@@ -77,7 +77,7 @@ def is_jobFile(entry):
     if entry.name.isnumeric() and entry.is_file():
         if entry.name in processIds:
             return True
-        print("Removing stale job", job_info(entry), sep="\t", file=sys.stderr)
+        print("Removing orphaned job file", job_info(entry), sep="\t", file=sys.stderr)
         try:
             os.unlink(entry.path)
         except OSError as e:
