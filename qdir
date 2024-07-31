@@ -30,7 +30,6 @@ Carl Osterwisch, January 2024
 
 import os
 from os.path import exists
-import pwd
 from pathlib import Path
 from signal import signal, SIGTERM
 import subprocess
@@ -66,13 +65,12 @@ processIds = {
 
 def job_info(entry):
     """Return user and command to be run by the entry or empty string"""
-    user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
     try:
-        with open(entry.path) as f:
+        with entry.open() as f:
             cmd = f.readline().strip()
     except Exception:
         cmd = ""
-    return "\t".join([entry.name, user, cmd])
+    return entry.name, entry.owner(), cmd
 
 
 def is_jobFile(entry):
@@ -80,15 +78,15 @@ def is_jobFile(entry):
     if entry.name.isnumeric() and entry.is_file():
         if entry.name in processIds:
             return True
-        print("Removing orphaned job file", job_info(entry), sep="\t", file=sys.stderr)
+        print("Removing orphaned job file", *job_info(entry), sep="\t", file=sys.stderr)
         try:
-            os.unlink(entry.path)
+            entry.unlink()
         except OSError as e:
             print(e, file=sys.stderr)
 
 
 # create list of currently queued jobs, sorted oldest to newest
-previousJobs = sorted(os.scandir(qdir), key=lambda entry: entry.stat().st_mtime_ns)
+previousJobs = sorted([entry for entry in qdir.iterdir()], key=lambda entry: entry.stat().st_mtime)
 previousJobs = [entry for entry in previousJobs if is_jobFile(entry)]
 
 if len(sys.argv) < 2:
@@ -99,8 +97,7 @@ if len(sys.argv) < 2:
     else:
         print("Order", "JobId", "User", "Command", sep="\t")
         for n, entry in enumerate(previousJobs):
-            user = pwd.getpwuid(entry.stat().st_uid).pw_name  # TODO windows
-            print(n, job_info(entry), sep="\t")
+            print(n, *job_info(entry), sep="\t")
     sys.exit(0)
 
 # fork to background
@@ -155,9 +152,7 @@ signal(SIGTERM, terminateJob)  # assign handler for SIGTERM
 
 # Wait for all previousJobs to complete
 previousJobs.reverse()  # check newest jobs first
-while exists(jobFile.name) and any(
-    map(exists, [entity.path for entity in previousJobs])
-):
+while exists(jobFile.name) and any(entry.exists() for entry in previousJobs):
     sleep(interval)
 
 # Launch the cmd if jobFile is still in queue
