@@ -7,7 +7,7 @@ A finished job will delete its own job queue file which signals the next job to 
 Users may manually delete job queue files to skip or terminate their corresponding jobs.
 
 Multiple users may share the same queue directory to ensure one job is executed at a time among the group of users.
-The default queue directory is /var/spool/qdir but any convenient directory may be selected by defining the QDIR environment variable.
+The default queue directory is /tmp but any convenient directory may be selected by defining the QDIR environment variable.
 
 The following shell commands prepare the default directory for group "users":
     QDIR=/var/spool/qdir
@@ -23,7 +23,7 @@ Usage:
     # Dequeue a job or terminate its execution
     kill jobId
     # or
-    rm /var/spool/qdir/jobId
+    rm /tmp/jobId
 
 Carl Osterwisch, January 2024
 """
@@ -37,7 +37,10 @@ import subprocess
 import sys
 from time import sleep
 
-qdir = Path(os.environ.get("QDIR", "/var/spool/qdir"))
+qdir = "/tmp" # Linux default
+if os.name == "nt":
+    qdir = "C:\TEMP"
+qdir = Path(os.environ.get("QDIR", os.environ.get("TEMP", qdir)))
 if not qdir.is_dir():
     sys.exit(f"ERROR: The QDIR directory {qdir} does not exist")
 if not os.access(qdir, os.W_OK):
