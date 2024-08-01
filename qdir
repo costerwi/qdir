@@ -16,17 +16,21 @@ The following shell commands prepare the default directory for group "users":
     sudo chmod g+w $QDIR
 
 Usage:
+    The behavior is different depending on the arguments
+
     # Add a job to the queue:
     qdir cmd [with optional arguments]
+
     # List the currently queued jobs:
     qdir
-    # Dequeue a job or terminate its execution
-    kill jobId
-    # or
-    rm /tmp/jobId
+
+    # Dequeue or terminate a list of jobId numbers
+    qdir jobId [jobId ...]
 
 Carl Osterwisch, January 2024
 """
+
+__version__ = "0.9.0"
 
 import os
 from os.path import exists
@@ -36,20 +40,15 @@ import subprocess
 import sys
 from time import sleep
 
+
 qdir = "/tmp" # Linux default
 if os.name == "nt":
-    qdir = "C:\TEMP"
+    qdir = "C:\TEMP" # Windows default
 qdir = Path(os.environ.get("QDIR", os.environ.get("TEMP", qdir)))
 if not qdir.is_dir():
     sys.exit(f"ERROR: The QDIR directory {qdir} does not exist")
 if not os.access(qdir, os.W_OK):
     sys.exit(f"ERROR: The QDIR directory {qdir} is not writable")
-
-interval = int(os.environ.get("QDIR_POLL_INTERVAL", 10))
-if not interval > 0:
-    sys.exit(f"The QDIR_POLL_INTERVAL {interval} must be seconds greater than 0")
-
-verbose = int(os.environ.get("QDIR_VERBOSE", 2))
 
 if os.name == 'nt':
     import win32security
@@ -63,137 +62,172 @@ if os.name == 'nt':
     except NotImplementedError:
         Path.owner = winOwner  # monkey patch if needed
 
-    import win32process
-    processIds = set(str(pid) for pid in win32process.EnumProcesses())
-else:
-    cmd = ["pgrep", "python"]
-    processIds = {
-        pid
-        for pid in subprocess.check_output(cmd, universal_newlines=True).split()
-        if pid.isnumeric()
-    }
+interval = int(os.environ.get("QDIR_POLL_INTERVAL", 10))
+if not interval > 0:
+    sys.exit(f"The QDIR_POLL_INTERVAL {interval} must be seconds greater than 0")
+
+verbose = int(os.environ.get("QDIR_VERBOSE", 2))
 
 
-def job_info(entry):
-    """Return user and command to be run by the entry or empty string"""
+def job_info(jobFilePath):
+    """Return jobId, user, and command to be run by the jobFilePath"""
     try:
-        with entry.open() as f:
+        with jobFilePath.open() as f:
             cmd = f.readline().strip()
     except Exception:
         cmd = ""
-    return entry.name, entry.owner(), cmd
+    return jobFilePath.name, jobFilePath.owner(), cmd
 
 
-def is_jobFile(entry):
-    """Verify the entry is an active job file with a watching process"""
-    if entry.name.isnumeric() and entry.is_file():
-        if entry.name in processIds:
-            return True
-        print("Removing orphaned job file", *job_info(entry), sep="\t", file=sys.stderr)
-        try:
-            entry.unlink()
-        except OSError as e:
-            print(e, file=sys.stderr)
+def getQueuedJobs():
+    "Return a list of jobFilePath for currently queued jobs, sorted oldest to newest"
+    if os.name == 'nt':
+        import win32process
+        processIds = set(str(pid) for pid in win32process.EnumProcesses())
+    else:
+        cmd = ["pgrep", "python"]
+        processIds = {
+            pid
+            for pid in subprocess.check_output(cmd, universal_newlines=True).split()
+            if pid.isnumeric()
+        }
+
+    def is_jobFile(jobFilePath):
+        """Verify the jobFilePath is an active job file with a watching process"""
+        if jobFilePath.name.isnumeric() and jobFilePath.is_file():
+            if jobFilePath.name in processIds:
+                return True
+            print("Removing orphaned job file", *job_info(jobFilePath), sep="\t", file=sys.stderr)
+            try:
+                jobFilePath.unlink()
+            except OSError as e:
+                print(e, file=sys.stderr)
+
+    queuedJobs = [jobFilePath for jobFilePath in qdir.iterdir()]
+    queuedJobs = sorted(queuedJobs, key=lambda jobFilePath: jobFilePath.stat().st_mtime)
+    return [jobFilePath for jobFilePath in queuedJobs if is_jobFile(jobFilePath)]
 
 
-# create list of currently queued jobs, sorted oldest to newest
-previousJobs = sorted([entry for entry in qdir.iterdir()], key=lambda entry: entry.stat().st_mtime)
-previousJobs = [entry for entry in previousJobs if is_jobFile(entry)]
-
-if len(sys.argv) < 2:
-    # list queued jobs and exit if no argument provided
+def qstat():
+    "Print a list of queued jobs"
     print("Queue directory", qdir)
-    if not previousJobs:
+    queuedJobs = getQueuedJobs()
+    if not queuedJobs:
         print("No jobs queued")
     else:
         print("Order", "JobId", "User", "Command", sep="\t")
-        for n, entry in enumerate(previousJobs):
-            print(n, *job_info(entry), sep="\t")
-    sys.exit(0)
-
-if os.name == "posix":
-    # fork to background TODO windows
-    if os.fork():
-        os._exit(0)
-
-jobId = str(os.getpid())  # process id of this script
-cmd = " ".join(sys.argv[1:])  # command to be executed
-job = None  # subprocess running the cmd, if any
-
-# Create the job file in queue directory
-with open(qdir / jobId, "w") as jobFile:
-    os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
-    print(jobFile.name)
-    os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
-    sys.stdout = open(os.devnull, "w")  # block further printing to stdout
-
-    print(cmd, file=jobFile)  # for information only
-    if previousJobs:
-        print(
-            "Queued behind",
-            " ".join([entity.name for entity in previousJobs]),
-            file=jobFile,
-        )
-
-def terminateJob(sig=None, frame=None):
-    """Terminate this job if running or dequeue if not"""
-    global job
-    result = ""
-    if exists(jobFile.name):
-        os.unlink(jobFile.name)  # remove job file
-    if hasattr(job, 'pid'):  # job is or was running
-        if job.poll() is None:
-            if verbose >= 2:
-                result = "Killed"
-            if os.name == "posix":
-                # pass SIGTERM signal to all child processes in this process group
-                try:
-                    os.killpg(os.getpgid(job.pid), signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-            else:
-                job.send_signal(signal.CTRL_BREAK_EVENT)
-                sleep(interval)
-                job.terminate()
-        elif verbose >= 1:
-            if job.returncode <= 0:
-                result = "Done"
-            else:
-                result = "Error"
-    elif job is None and verbose >= 2:
-        result = "Dequeued"
-    if result:
-        print(jobId, result, cmd, sep="\t", file=sys.stderr)
-        job = result  # don't report result again
+        for n, jobFilePath in enumerate(queuedJobs):
+            print(n, *job_info(jobFilePath), sep="\t")
 
 
-signal.signal(signal.SIGTERM, terminateJob)  # assign handler for SIGTERM
+def enqueue(cmd):
+    "Submit cmd to the job queue"
+    previousJobs = getQueuedJobs()
+    if os.name == "posix":
+        # fork to background TODO similar for windows
+        if os.fork():
+            os._exit(0)
 
-# Wait for all previousJobs to complete
-previousJobs.reverse()  # check newest jobs first
-while exists(jobFile.name) and any(entry.exists() for entry in previousJobs):
-    sleep(interval)
+    jobId = str(os.getpid())  # process id of this script
+    job = None  # subprocess running the cmd, if any
 
-# Launch the cmd if jobFile is still in queue
-if exists(jobFile.name):
-    logName = Path(cmd.split()[0]).stem + "._" + jobId
-    with open(logName, "w") as logFile:
-        options = {}
-        if os.name == "nt":
-            options['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
-        try:
-            job = subprocess.Popen(
-                cmd,
-                shell=True,
-                start_new_session=True,
-                stdout=logFile,
-                stderr=subprocess.STDOUT,
-                **options,
+    def terminateJob(sig=None, frame=None):
+        """Terminate this job if running or dequeue if not"""
+        nonlocal job
+        result = ""
+        if exists(jobFile.name):
+            os.unlink(jobFile.name)  # remove job file
+        if hasattr(job, 'pid'):  # job is or was running
+            if job.poll() is None:
+                if verbose >= 2:
+                    result = "Killed"
+                if os.name == "posix":
+                    # pass SIGTERM signal to all child processes in this process group
+                    try:
+                        os.killpg(os.getpgid(job.pid), signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                else:
+                    job.send_signal(signal.CTRL_BREAK_EVENT)
+                    sleep(interval)
+                    job.terminate()
+            elif verbose >= 1:
+                if job.returncode <= 0:
+                    result = "Done"
+                else:
+                    result = "Error"
+        elif job is None and verbose >= 2:
+            result = "Dequeued"
+        if result:
+            print(jobId, result, cmd, sep="\t", file=sys.stderr)
+            job = result  # don't report result again
+
+    signal.signal(signal.SIGTERM, terminateJob)  # assign handler for SIGTERM
+
+    # Create the job file in queue directory
+    with open(qdir / jobId, "w") as jobFile:
+        os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
+        print(jobFile.name)
+        os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
+        sys.stdout = open(os.devnull, "w")  # block further printing to stdout
+
+        print(cmd, file=jobFile)  # jobFile contents are for information only
+        if previousJobs:
+            print(
+                "Queued behind",
+                " ".join([entity.name for entity in previousJobs]),
+                file=jobFile,
             )
-            while exists(jobFile.name) and job.poll() is None:
-                sleep(interval)
-        except Exception as e:
-            print(e, file=logFile)
 
-# Clean up
-terminateJob()
+    # Wait for all previousJobs to complete
+    previousJobs.reverse()  # check newest jobs first
+    while exists(jobFile.name) and any(entry.exists() for entry in previousJobs):
+        sleep(interval)
+
+    # Launch the cmd if jobFile is still in queue
+    if exists(jobFile.name):
+        logName = Path(cmd.split()[0]).stem + "._" + jobId
+        with open(logName, "w") as logFile:
+            options = {}
+            if os.name == "nt":
+                options['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+            try:
+                job = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    start_new_session=True,
+                    stdout=logFile,
+                    stderr=subprocess.STDOUT,
+                    **options,
+                )
+                while exists(jobFile.name) and job.poll() is None:
+                    # job is still running
+                    sleep(interval)
+            except Exception as e:
+                print(e, file=logFile)
+
+    terminateJob() # Clean up at the end
+
+
+def dequeueJobs(jobIdList):
+    "Remove a list of jobIds from the queue"
+    queuedJobs = getQueuedJobs()
+    for jobId in jobIdList:
+        jobPath = qdir/str(jobId)
+        if not jobPath in queuedJobs:
+            print(jobId, 'is not queued')
+        else:
+            print('Dequeing jobId', *job_info(jobPath), sep='\t')
+            jobPath.unlink() # Just delete its jobFile
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        # No arguments: Display a list of jobs in the queue
+        qstat()
+    elif all(arg.isnumeric() for arg in sys.argv[1:]):
+        # All integer arguments: Dequeue these jobId numbers
+        dequeueJobs(sys.argv[1:])
+    else:
+        # Enqueue a new command
+        enqueue(" ".join(sys.argv[1:]))
