@@ -7,7 +7,7 @@ A finished job will delete its own job queue file which signals the next job to 
 Users may manually delete job queue files to skip or terminate their corresponding jobs.
 
 Multiple users may share the same queue directory to ensure one job is executed at a time among the group of users.
-The default queue directory is /tmp but any convenient directory may be selected by defining the QDIR environment variable.
+By default the script will use your TEMP directory but any convenient directory may be selected by defining the QDIR environment variable.
 
 The following shell commands prepare the default directory for group "users":
     QDIR=/var/spool/qdir
@@ -49,7 +49,11 @@ if not os.access(qdir, os.W_OK):
     sys.exit(f"ERROR: The QDIR directory {qdir} is not writable")
 
 if os.name == 'nt':
-    import win32security
+    try:
+        import win32security
+    except ImportError:
+        sys.exit("pywin32 module is missing. Install with this command:\n"
+            "pip3 install pywin32")
     def winOwner(self):
         sd = win32security.GetFileSecurity(str(self), win32security.OWNER_SECURITY_INFORMATION)
         owner_sid = sd.GetSecurityDescriptorOwner()
