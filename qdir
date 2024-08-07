@@ -38,13 +38,11 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+from tempfile import gettempdir
 from time import sleep
 
 
-qdir = "/tmp" # Linux default
-if os.name == "nt":
-    qdir = "C:\TEMP" # Windows default
-qdir = Path(os.environ.get("QDIR", os.environ.get("TEMP", qdir)))
+qdir = Path(os.environ.get("QDIR", gettempdir()))
 if not qdir.is_dir():
     sys.exit(f"ERROR: The QDIR directory {qdir} does not exist")
 if not os.access(qdir, os.W_OK):
