@@ -115,7 +115,8 @@ def getQueuedJobs():
 
 def qstat():
     "Print a list of queued jobs"
-    print("Queue directory", qdir)
+    if verbose >= 2:
+        print("Queue directory", qdir)
     queuedJobs = getQueuedJobs()
     if not queuedJobs:
         print("No jobs queued")
