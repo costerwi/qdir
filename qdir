@@ -99,18 +99,18 @@ def getQueuedJobs():
 
     def is_jobFile(jobFilePath):
         """Verify the jobFilePath is an active job file with a watching process"""
-        if jobFilePath.name.isnumeric() and jobFilePath.is_file():
-            if jobFilePath.name in processIds:
-                return True
-            print("Removing orphaned job file", *job_info(jobFilePath), sep="\t", file=sys.stderr)
-            try:
-                jobFilePath.unlink()
-            except OSError as e:
-                print(e, file=sys.stderr)
+        if not (jobFilePath.is_file() and jobFilePath.suffix == '.qdir'):
+            return False
+        if jobFilePath.stem in processIds:
+            return True
+        print("Removing orphaned job file", *job_info(jobFilePath), sep="\t", file=sys.stderr)
+        try:
+            jobFilePath.unlink()
+        except OSError as e:
+            print(e, file=sys.stderr)
 
-    queuedJobs = [jobFilePath for jobFilePath in qdir.iterdir()]
-    queuedJobs = sorted(queuedJobs, key=lambda jobFilePath: jobFilePath.stat().st_mtime)
-    return [jobFilePath for jobFilePath in queuedJobs if is_jobFile(jobFilePath)]
+    queuedJobs = [filePath for filePath in qdir.iterdir() if is_jobFile(filePath)]
+    return sorted(queuedJobs, key=lambda jobFilePath: jobFilePath.stat().st_mtime)
 
 
 def qstat():
@@ -171,7 +171,7 @@ def enqueue(cmd):
     signal.signal(signal.SIGTERM, terminateJob)  # assign handler for SIGTERM
 
     # Create the job file in queue directory
-    with open(qdir / jobId, "w") as jobFile:
+    with open((qdir/jobId).with_suffix(".qdir"), "w") as jobFile:
         os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
         status = "Queued " + asctime()
         if verbose >= 2:
@@ -222,7 +222,7 @@ def dequeueJobs(jobIdList):
     "Remove a list of jobIds from the queue"
     queuedJobs = getQueuedJobs()
     for jobId in jobIdList:
-        jobPath = qdir/str(jobId)
+        jobPath = (qdir/str(jobId)).with_suffix(".qdir")
         if not jobPath in queuedJobs:
             print(jobId, 'is not queued')
         else:
