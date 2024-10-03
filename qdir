@@ -38,7 +38,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-from time import sleep
+from time import sleep, asctime, perf_counter
 
 
 qdir = "/tmp" # Linux default
@@ -141,9 +141,11 @@ def enqueue(cmd):
         """Terminate this job if running or dequeue if not"""
         nonlocal job
         result = ""
+        runTime = ""
         if exists(jobFile.name):
             os.unlink(jobFile.name)  # remove job file
         if hasattr(job, 'pid'):  # job is or was running
+            runTime = humanDuration(perf_counter() - job.startTime)
             if job.poll() is None:
                 if verbose >= 2:
                     result = "Killed"
@@ -165,7 +167,7 @@ def enqueue(cmd):
         elif job is None and verbose >= 2:
             result = "Dequeued"
         if result:
-            print(jobId, result, cmd, sep="\t", file=sys.stderr)
+            print(jobId, result, cmd, runTime, sep="\t", file=sys.stderr)
             job = result  # don't report result again
 
     signal.signal(signal.SIGTERM, terminateJob)  # assign handler for SIGTERM
@@ -195,7 +197,16 @@ def enqueue(cmd):
 
     # Launch the cmd if jobFile is still in queue
     if exists(jobFile.name):
-        logName = Path(cmd.split()[0]).stem + "._" + jobId
+        try:
+            # Append the job starting status to jobFile
+            stat = os.stat(jobFile.name)
+            with open(jobFile.name, 'a') as jobFile:
+                print('Started', asctime(), file=jobFile)
+            # Keep mtime unchanged so the job files sort correctly
+            os.utime(jobFile.name, (stat.st_atime, stat.st_mtime))
+        except Exception:
+            pass # ignore exceptions which might prevent the job from running
+        logName = Path(cmd.split()[0]).with_suffix("._" + jobId)
         with open(logName, "w") as logFile:
             options = {}
             if os.name == "nt":
@@ -209,6 +220,7 @@ def enqueue(cmd):
                     stderr=subprocess.STDOUT,
                     **options,
                 )
+                job.startTime = perf_counter()
                 while exists(jobFile.name) and job.poll() is None:
                     # job is still running
                     sleep(interval)
@@ -228,6 +240,13 @@ def dequeueJobs(jobIdList):
         else:
             print('Dequeing', *job_info(jobPath), sep='\t')
             jobPath.unlink() # Just delete its jobFile
+
+
+def humanDuration(seconds):
+    for unit, per in ('days', 86400), ('hours', 3600), ('minutes', 60):
+        if seconds >= 1.1*per:
+            return('{:.2g} {}'.format(seconds/per, unit))
+    return('{:.2g} seconds'.format(seconds))
 
 
 if __name__ == "__main__":
