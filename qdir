@@ -71,12 +71,17 @@ verbose = int(os.environ.get("QDIR_VERBOSE", 2))
 
 def job_info(jobFilePath):
     """Return jobId, user, and command to be run by the jobFilePath"""
+    info = [jobFilePath.stem, jobFilePath.owner()]
     try:
-        with jobFilePath.open() as f:
-            cmd = f.readline().strip()
-    except Exception:
         cmd = ""
-    return jobFilePath.name, jobFilePath.owner(), cmd
+        with jobFilePath.open() as f:
+            for line in f:
+                status = line.strip() # capture last line
+                cmd = cmd or status # capture first line
+        info.extend([cmd, status])
+    except Exception as e:
+        if verbose >= 3: print(e, file=sys.stderr)
+    return info
 
 
 def getQueuedJobs():
@@ -115,9 +120,10 @@ def qstat():
     if not queuedJobs:
         print("No jobs queued")
     else:
-        print("Order", "JobId", "User", "Command", sep="\t")
-        for n, jobFilePath in enumerate(queuedJobs):
-            print(n, *job_info(jobFilePath), sep="\t")
+        if verbose >= 1:
+            print("JobId", "User", "Command", sep="\t")
+        for jobFilePath in queuedJobs:
+            print(*job_info(jobFilePath), sep="\t")
 
 
 def enqueue(cmd):
@@ -167,17 +173,20 @@ def enqueue(cmd):
     # Create the job file in queue directory
     with open(qdir / jobId, "w") as jobFile:
         os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
-        print(jobFile.name)
+        status = "Queued " + asctime()
+        if verbose >= 2:
+            print(jobId, status, sep='\t')
         os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
         sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
         print(cmd, file=jobFile)  # jobFile contents are for information only
         if previousJobs:
             print(
-                "Queued behind",
-                " ".join([entity.name for entity in previousJobs]),
+                "Behind",
+                " ".join([job.stem for job in previousJobs]),
                 file=jobFile,
             )
+        print(status, file=jobFile)
 
     # Wait for all previousJobs to complete
     previousJobs.reverse()  # check newest jobs first
@@ -217,7 +226,7 @@ def dequeueJobs(jobIdList):
         if not jobPath in queuedJobs:
             print(jobId, 'is not queued')
         else:
-            print('Dequeing jobId', *job_info(jobPath), sep='\t')
+            print('Dequeing', *job_info(jobPath), sep='\t')
             jobPath.unlink() # Just delete its jobFile
 
 
