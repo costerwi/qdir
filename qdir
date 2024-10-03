@@ -39,7 +39,7 @@ import signal
 import subprocess
 import sys
 from tempfile import gettempdir
-from time import sleep
+from time import sleep, asctime, perf_counter
 
 
 qdir = Path(os.environ.get("QDIR", gettempdir()))
@@ -73,12 +73,17 @@ verbose = int(os.environ.get("QDIR_VERBOSE", 2))
 
 def job_info(jobFilePath):
     """Return jobId, user, and command to be run by the jobFilePath"""
+    info = [jobFilePath.stem, jobFilePath.owner()]
     try:
-        with jobFilePath.open() as f:
-            cmd = f.readline().strip()
-    except Exception:
         cmd = ""
-    return jobFilePath.name, jobFilePath.owner(), cmd
+        with jobFilePath.open() as f:
+            for line in f:
+                status = line.strip() # capture last line
+                cmd = cmd or status # capture first line
+        info.extend([cmd, status])
+    except Exception as e:
+        if verbose >= 3: print(e, file=sys.stderr)
+    return info
 
 
 def getQueuedJobs():
@@ -96,30 +101,32 @@ def getQueuedJobs():
 
     def is_jobFile(jobFilePath):
         """Verify the jobFilePath is an active job file with a watching process"""
-        if jobFilePath.name.isnumeric() and jobFilePath.is_file():
-            if jobFilePath.name in processIds:
-                return True
-            print("Removing orphaned job file", *job_info(jobFilePath), sep="\t", file=sys.stderr)
-            try:
-                jobFilePath.unlink()
-            except OSError as e:
-                print(e, file=sys.stderr)
+        if not (jobFilePath.is_file() and jobFilePath.suffix == '.qdir'):
+            return False
+        if jobFilePath.stem in processIds:
+            return True
+        print("Removing orphaned job file", *job_info(jobFilePath), sep="\t", file=sys.stderr)
+        try:
+            jobFilePath.unlink()
+        except OSError as e:
+            print(e, file=sys.stderr)
 
-    queuedJobs = [jobFilePath for jobFilePath in qdir.iterdir()]
-    queuedJobs = sorted(queuedJobs, key=lambda jobFilePath: jobFilePath.stat().st_mtime)
-    return [jobFilePath for jobFilePath in queuedJobs if is_jobFile(jobFilePath)]
+    queuedJobs = [filePath for filePath in qdir.iterdir() if is_jobFile(filePath)]
+    return sorted(queuedJobs, key=lambda jobFilePath: jobFilePath.stat().st_mtime)
 
 
 def qstat():
     "Print a list of queued jobs"
-    print("Queue directory", qdir)
+    if verbose >= 2:
+        print("Queue directory", qdir)
     queuedJobs = getQueuedJobs()
     if not queuedJobs:
         print("No jobs queued")
     else:
-        print("Order", "JobId", "User", "Command", sep="\t")
-        for n, jobFilePath in enumerate(queuedJobs):
-            print(n, *job_info(jobFilePath), sep="\t")
+        if verbose >= 1:
+            print("JobId", "User", "Command", sep="\t")
+        for jobFilePath in queuedJobs:
+            print(*job_info(jobFilePath), sep="\t")
 
 
 def enqueue(cmd):
@@ -137,9 +144,11 @@ def enqueue(cmd):
         """Terminate this job if running or dequeue if not"""
         nonlocal job
         result = ""
+        runTime = ""
         if exists(jobFile.name):
             os.unlink(jobFile.name)  # remove job file
         if hasattr(job, 'pid'):  # job is or was running
+            runTime = humanDuration(perf_counter() - job.startTime)
             if job.poll() is None:
                 if verbose >= 2:
                     result = "Killed"
@@ -161,25 +170,28 @@ def enqueue(cmd):
         elif job is None and verbose >= 2:
             result = "Dequeued"
         if result:
-            print(jobId, result, cmd, sep="\t", file=sys.stderr)
+            print(jobId, result, cmd, runTime, sep="\t", file=sys.stderr)
             job = result  # don't report result again
 
     signal.signal(signal.SIGTERM, terminateJob)  # assign handler for SIGTERM
 
     # Create the job file in queue directory
-    with open(qdir / jobId, "w") as jobFile:
+    with open((qdir/jobId).with_suffix(".qdir"), "w") as jobFile:
         os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
-        print(jobFile.name)
+        status = "Queued " + asctime()
+        if verbose >= 2:
+            print(jobId, status, sep='\t')
         os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
         sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
         print(cmd, file=jobFile)  # jobFile contents are for information only
         if previousJobs:
             print(
-                "Queued behind",
-                " ".join([entity.name for entity in previousJobs]),
+                "Behind",
+                " ".join([job.stem for job in previousJobs]),
                 file=jobFile,
             )
+        print(status, file=jobFile)
 
     # Wait for all previousJobs to complete
     previousJobs.reverse()  # check newest jobs first
@@ -188,7 +200,16 @@ def enqueue(cmd):
 
     # Launch the cmd if jobFile is still in queue
     if exists(jobFile.name):
-        logName = Path(cmd.split()[0]).stem + "._" + jobId
+        try:
+            # Append the job starting status to jobFile
+            stat = os.stat(jobFile.name)
+            with open(jobFile.name, 'a') as jobFile:
+                print('Started', asctime(), file=jobFile)
+            # Keep mtime unchanged so the job files sort correctly
+            os.utime(jobFile.name, (stat.st_atime, stat.st_mtime))
+        except Exception:
+            pass # ignore exceptions which might prevent the job from running
+        logName = Path(cmd.split()[0]).with_suffix("._" + jobId)
         with open(logName, "w") as logFile:
             options = {}
             if os.name == "nt":
@@ -202,6 +223,7 @@ def enqueue(cmd):
                     stderr=subprocess.STDOUT,
                     **options,
                 )
+                job.startTime = perf_counter()
                 while exists(jobFile.name) and job.poll() is None:
                     # job is still running
                     sleep(interval)
@@ -215,12 +237,19 @@ def dequeueJobs(jobIdList):
     "Remove a list of jobIds from the queue"
     queuedJobs = getQueuedJobs()
     for jobId in jobIdList:
-        jobPath = qdir/str(jobId)
+        jobPath = (qdir/str(jobId)).with_suffix(".qdir")
         if not jobPath in queuedJobs:
             print(jobId, 'is not queued')
         else:
-            print('Dequeing jobId', *job_info(jobPath), sep='\t')
+            print('Dequeing', *job_info(jobPath), sep='\t')
             jobPath.unlink() # Just delete its jobFile
+
+
+def humanDuration(seconds):
+    for unit, per in ('days', 86400), ('hours', 3600), ('minutes', 60):
+        if seconds >= 1.1*per:
+            return('{:.2g} {}'.format(seconds/per, unit))
+    return('{:.2g} seconds'.format(seconds))
 
 
 if __name__ == "__main__":
