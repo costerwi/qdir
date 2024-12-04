@@ -178,7 +178,7 @@ def enqueue(cmd):
         os.environ["QDIR_FILE"] = jobFile.name  # will be exported to cmd
         status = "Queued " + asctime()
         if verbose >= 2:
-            print(jobId, status, sep='\t')
+            print(jobId, cmd, status, sep='\t')
         os.close(sys.stdout.fileno())  # allow shell to collect jobFile.name
         sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
