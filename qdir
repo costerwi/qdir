@@ -266,7 +266,7 @@ def enqueue(cmd: list[str]):
     jobId = str(os.getpid())  # process id of this script
     job = None  # subprocess running the cmd, if any
     qFile = None  # qFile associated with this job
-    qTime = perf_counter()
+    startTime = perf_counter()  # time job was enqueued
     if not shutil.which(cmd[0]) and options.verbose >= 1:
         print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
 
@@ -274,11 +274,10 @@ def enqueue(cmd: list[str]):
         """Terminate this job if running or dequeue if not"""
         nonlocal job
         result = ""
-        runTime = ""
+        runTime = " after " + humanDuration(perf_counter() - startTime)
         if qFile and exists(qFile.name):
             os.unlink(qFile.name)  # remove job file
         if hasattr(job, "pid"):  # job is or was running
-            runTime = " after " + humanDuration(perf_counter() - job.startTime)
             if job.poll() is None:
                 if options.verbose >= 2:
                     result = "Killed"
@@ -300,7 +299,6 @@ def enqueue(cmd: list[str]):
         elif job is None and options.verbose >= 2:
             # removed from the queue before starting
             result = "Dequeued"
-            runTime = " after " + humanDuration(perf_counter() - qTime)
         if result:
             print(jobId, options.name, result + runTime, sep="\t", file=sys.stderr)
             job = result  # don't report result again
@@ -357,7 +355,7 @@ def enqueue(cmd: list[str]):
                     stderr=subprocess.STDOUT,
                     **opts,
                 )
-                job.startTime = perf_counter()
+                startTime = perf_counter()  # reset to time job started running
                 while exists(qFile.name) and job.poll() is None:
                     # job is still running
                     sleep(options.interval)
