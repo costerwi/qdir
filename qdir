@@ -180,16 +180,17 @@ def parseArguments(argv):
     # Scan cmd script for optional directives
     directives = []
     dprefixRe = re.compile(dprefix)
+    commentRe = re.compile('(#|@?(?i:rem))')
     try:
-        with open(argv[0]) as jobScript:
+        with open(args[0]) as jobScript:
             for line in jobScript:
                 m = dprefixRe.match(line)
                 if m:
                     directives.extend(shlex.split(line[m.end():]))
-                elif any(line.startswith(ch) for ch in ('#', ':')):
-                    continue  # ignore comment lines
                 elif len(line.strip()) == 0:
                     continue  # ignore blank lines
+                elif commentRe.match(line):
+                    continue  # ignore non-directive comment lines
                 else:
                     break  # otherwise stop processing
     except:
