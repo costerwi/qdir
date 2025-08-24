@@ -202,7 +202,7 @@ def parseArguments(argv):
     if not options.name and len(args) > 0:
         options.name = args[0]
     if unknown and options.verbose >= 2:
-        print('Unknown arguments', *unknown, file=sys.stderr)
+        print('WARNING: Unknown arguments', *unknown, file=sys.stderr)
     if options.verbose >= 5:
         print('Arguments', argv, file=sys.stderr)
         print('Directives', directives, file=sys.stderr)
@@ -265,7 +265,7 @@ def enqueue(cmd):
     # Create the qFile in qdir directory with its name matching this jobId
     with (options.qdir/jobId).with_suffix(qFileSuffix).open("w") as qFile:
         os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
-        status = " Queued " + asctime()
+        status = "Queued " + asctime()
         if options.verbose >= 2:
             print(jobId, status, options.name, sep='\t')
         os.close(sys.stdout.fileno())  # allow shell to collect qFile.name
