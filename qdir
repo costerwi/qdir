@@ -60,7 +60,8 @@ parser.add_argument('-v', '--verbose', type=int,
 parser.add_argument('args', nargs='*')
 
 qFileSuffix = os.environ.get("QDIR_SUFFIX", ".qdir")
-dprefix = os.environ.get("QDIR_DPREFIX", os.environ.get("PBS_DPREFIX", "#(QDIR|PBS)"))
+dprefix = os.environ.get("QDIR_DPREFIX",
+        os.environ.get("PBS_DPREFIX", "(#|@?(?i:rem ))(QDIR|PBS)"))
 
 if os.name == 'nt':
     def winOwner(self):
