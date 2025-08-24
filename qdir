@@ -297,6 +297,7 @@ def enqueue(cmd):
         except Exception:
             pass # ignore any status update exceptions
         name = options.name
+        owner = os.getlogin()
         logFilePath = Path(options.output.format(**locals()))
         with logFilePath.open("w") as logFile:
             opts = {}
