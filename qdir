@@ -223,6 +223,7 @@ def enqueue(cmd):
     jobId = str(os.getpid())  # process id of this script
     job = None  # subprocess running the cmd, if any
     qFile = None  # qFile associated with this job
+    qTime = perf_counter()
     if not shutil.which(cmd[0]) and options.verbose >= 1:
         print('WARNING: {} is not in PATH'.format(cmd[0]), file=sys.stderr)
 
@@ -234,7 +235,7 @@ def enqueue(cmd):
         if qFile and exists(qFile.name):
             os.unlink(qFile.name)  # remove job file
         if hasattr(job, 'pid'):  # job is or was running
-            runTime = humanDuration(perf_counter() - job.startTime)
+            runTime = ' after ' + humanDuration(perf_counter() - job.startTime)
             if job.poll() is None:
                 if options.verbose >= 2:
                     result = "Killed"
@@ -256,8 +257,9 @@ def enqueue(cmd):
         elif job is None and options.verbose >= 2:
             # removed from the queue before starting
             result = "Dequeued"
+            runTime = ' after ' + humanDuration(perf_counter() - qTime)
         if result:
-            print(jobId, result, runTime, options.name, sep="\t", file=sys.stderr)
+            print(jobId, options.name, result + runTime, sep="\t", file=sys.stderr)
             job = result  # don't report result again
 
     signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
@@ -267,7 +269,7 @@ def enqueue(cmd):
         os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
         status = "Queued " + asctime()
         if options.verbose >= 2:
-            print(jobId, status, options.name, sep='\t')
+            print(jobId, options.name, status, sep='\t')
         os.close(sys.stdout.fileno())  # allow shell to collect qFile.name
         sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
