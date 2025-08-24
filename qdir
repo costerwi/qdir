@@ -29,8 +29,9 @@ Usage:
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
+from argparse import ArgumentParser
 import os
 from os.path import exists
 from pathlib import Path
@@ -40,17 +41,26 @@ import sys
 from tempfile import gettempdir
 from time import sleep, asctime, perf_counter
 
+parser = ArgumentParser()
+parser.add_argument('-N', '--name',
+        help='Name for the job',
+        default=os.environ.get("PBS_JOBNAME"))
+parser.add_argument('-q', '--qdir',
+        help='Directory to store the queue files',
+        type=Path, default=os.environ.get("QDIR", gettempdir()))
+parser.add_argument('-c', '--interval', type=int,
+        help='Polling interval in seconds',
+        default=int(os.environ.get("QDIR_POLL_INTERVAL", 10)))
+parser.add_argument('-o', '--output',
+        help='Output file name',
+        default=os.environ.get("QDIR_LOGNAME", "{name}._{jobId}"))
+parser.add_argument('-v', '--verbose', type=int,
+        help='Verbosity level',
+        default=os.environ.get("QDIR_VERBOSE", 2))
+parser.add_argument('args', nargs='*')
 
-qdir = Path(os.environ.get("QDIR", gettempdir()))
-if not qdir.is_dir():
-    sys.exit(f"ERROR: The QDIR directory {qdir} does not exist")
-if not os.access(qdir, os.W_OK):
-    sys.exit(f"ERROR: The QDIR directory {qdir} is not writable")
-interval = int(os.environ.get("QDIR_POLL_INTERVAL", 10))
-if not interval > 0:
-    sys.exit(f"The QDIR_POLL_INTERVAL {interval} must be seconds greater than 0")
-verbose = int(os.environ.get("QDIR_VERBOSE", 2))
-qFileSuffix = os.environ.get("QDIR_SUFFIX", ".q")
+qFileSuffix = os.environ.get("QDIR_SUFFIX", ".qdir")
+dprefix = os.environ.get("QDIR_DPREFIX", os.environ.get("PBS_DPREFIX", "#(QDIR|PBS)"))
 
 if os.name == 'nt':
     def winOwner(self):
@@ -58,7 +68,7 @@ if os.name == 'nt':
         try:
             import win32security
         except ImportError:
-            if verbose >= 3:
+            if options.verbose >= 3:
                 print("Unable to determine owner without win32security module",
                         file=sys.stderr)
             return "unknown"
@@ -81,9 +91,9 @@ def getJobInfo(qFilePath):
             for line in qFile:
                 status = line.strip() # capture last line
                 cmd = cmd or status # capture first line
-        info.extend([cmd, status])
+        info.extend([status, cmd])
     except Exception as e:
-        if verbose >= 3: print(e, file=sys.stderr)
+        if options.verbose >= 3: print(e, file=sys.stderr)
     return info
 
 
@@ -120,22 +130,64 @@ def getQueuedJobs():
             print(e, file=sys.stderr)
 
     queuedJobs = [filePath for filePath in
-            qdir.glob("*" + qFileSuffix) if is_qFile(filePath)]
+            options.qdir.glob("*" + qFileSuffix) if is_qFile(filePath)]
     return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
 
 
 def qstat():
     "Print a list of queued jobs"
-    if verbose >= 2:
-        print("Queue directory", qdir)
+    if options.verbose >= 2:
+        print("Queue directory", options.qdir)
     queuedJobs = getQueuedJobs()
     if not queuedJobs:
         print("No jobs queued")
     else:
-        if verbose >= 1:
-            print("JobId", "User", "Command", sep="\t")
+        if options.verbose >= 1:
+            print("JobId", "User", "Status" + 26*' ', "Name", sep="\t")
         for qFilePath in queuedJobs:
             print(*getJobInfo(qFilePath), sep="\t")
+
+
+def parseArguments(argv):
+    import re
+    import shlex
+
+    # Parse arguments to find cmd
+    options, unknown = parser.parse_known_args(argv)
+
+    args = options.args
+
+    # Scan cmd script for optional directives
+    directives = []
+    dprefixRe = re.compile(dprefix)
+    try:
+        with open(argv[0]) as jobScript:
+            for line in jobScript:
+                m = dprefixRe.match(line)
+                if m:
+                    directives.extend(shlex.split(line[m.end():]))
+                elif any(line.startswith(ch) for ch in ('#', ':')):
+                    continue  # ignore comment lines
+                elif len(line.strip()) == 0:
+                    continue  # ignore blank lines
+                else:
+                    break  # otherwise stop processing
+    except:
+        pass
+
+    # Parse directives and commandline arguments
+    options, unknown = parser.parse_known_args(directives + argv)
+    del options.args  # directives may not set args
+    if not options.name and len(args) > 0:
+        options.name = args[0]
+    if unknown and options.verbose >= 2:
+        print('Unknown arguments', *unknown, file=sys.stderr)
+    if options.verbose >= 5:
+        print('Arguments', argv, file=sys.stderr)
+        print('Directives', directives, file=sys.stderr)
+        print('options', options, file=sys.stderr)
+        print('args', args, file=sys.stderr)
+    return args, options
 
 
 def enqueue(cmd):
@@ -160,7 +212,7 @@ def enqueue(cmd):
         if hasattr(job, 'pid'):  # job is or was running
             runTime = humanDuration(perf_counter() - job.startTime)
             if job.poll() is None:
-                if verbose >= 2:
+                if options.verbose >= 2:
                     result = "Killed"
                 if os.name == "posix":
                     # pass SIGTERM signal to all child processes in this process group
@@ -170,32 +222,32 @@ def enqueue(cmd):
                         pass
                 else:
                     job.send_signal(signal.CTRL_BREAK_EVENT)
-                    sleep(interval)
+                    sleep(options.interval)
                     job.terminate()
-            elif verbose >= 1:
+            elif options.verbose >= 1:
                 if job.returncode <= 0:
                     result = "Done"
                 else:
                     result = "Error"
-        elif job is None and verbose >= 2:
+        elif job is None and options.verbose >= 2:
             # removed from the queue before starting
             result = "Dequeued"
         if result:
-            print(jobId, result, cmd, runTime, sep="\t", file=sys.stderr)
+            print(jobId, result, runTime, options.name, sep="\t", file=sys.stderr)
             job = result  # don't report result again
 
     signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
 
     # Create the qFile in qdir directory with its name matching this jobId
-    with (qdir/jobId).with_suffix(qFileSuffix).open("w") as qFile:
+    with (options.qdir/jobId).with_suffix(qFileSuffix).open("w") as qFile:
         os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
-        status = "Queued " + asctime()
-        if verbose >= 2:
-            print(jobId, cmd, status, sep='\t')
+        status = " Queued " + asctime()
+        if options.verbose >= 2:
+            print(jobId, status, options.name, sep='\t')
         os.close(sys.stdout.fileno())  # allow shell to collect qFile.name
         sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
-        print(cmd, file=qFile)  # qFile contents are for information only
+        print(options.name, file=qFile)  # qFile contents are for information only
         if previousJobs:
             print(
                 "Behind",
@@ -207,7 +259,7 @@ def enqueue(cmd):
     # Wait for all previousJobs to complete
     previousJobs.reverse()  # check newest jobs first
     while exists(qFile.name) and any(otherFile.exists() for otherFile in previousJobs):
-        sleep(interval)
+        sleep(options.interval)
 
     # Launch the cmd only if this job's qFile still exists
     if exists(qFile.name):
@@ -220,24 +272,25 @@ def enqueue(cmd):
             os.utime(qFile.name, (stat.st_atime, stat.st_mtime))
         except Exception:
             pass # ignore any status update exceptions
-        logFilePath = Path(cmd.split()[0]).with_suffix("._" + jobId)
+        name = options.name
+        logFilePath = Path(options.output.format(**locals()))
         with logFilePath.open("w") as logFile:
-            options = {}
+            opts = {}
             if os.name == "nt":
-                options['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+                opts['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
             try:
                 job = subprocess.Popen(
                     cmd,
-                    shell=True,
+                    shell=False,
                     start_new_session=True,
                     stdout=logFile,
                     stderr=subprocess.STDOUT,
-                    **options,
+                    **opts,
                 )
                 job.startTime = perf_counter()
                 while exists(qFile.name) and job.poll() is None:
                     # job is still running
-                    sleep(interval)
+                    sleep(options.interval)
             except Exception as e:
                 print(e, file=logFile)
 
@@ -248,7 +301,7 @@ def dequeueJobs(jobIdList):
     "Remove a list of jobIds from the queue"
     queuedJobs = getQueuedJobs()
     for jobId in jobIdList:
-        qFilePath = (qdir/str(jobId)).with_suffix(qFileSuffix)
+        qFilePath = (options.qdir/str(jobId)).with_suffix(qFileSuffix)
         if not qFilePath in queuedJobs:
             print(jobId, 'is not queued')
         else:
@@ -264,14 +317,20 @@ def humanDuration(seconds):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    args, options = parseArguments(sys.argv[1:])
+    if not options.qdir.is_dir():
+        sys.exit(f"ERROR: The QDIR directory {options.qdir} does not exist")
+    if not os.access(options.qdir, os.W_OK):
+        sys.exit(f"ERROR: The QDIR directory {options.qdir} is not writable")
+    if not options.interval > 0:
+        sys.exit(f"The QDIR_POLL_INTERVAL {interval} must be seconds greater than 0")
+
+    if len(args) == 0:
         # No arguments: Display a list of jobs in the queue
         qstat()
-    elif all(arg.isnumeric() for arg in sys.argv[1:]):
+    elif all(arg.isnumeric() for arg in args):
         # All integer arguments: Dequeue these jobId numbers
-        dequeueJobs(sys.argv[1:])
-    elif len(sys.argv) == 2 and sys.argv[1] == "help":
-        sys.exit(__doc__) # show help
+        dequeueJobs(args)
     else:
         # Enqueue a new command
-        enqueue(" ".join(sys.argv[1:]))
+        enqueue(args)
