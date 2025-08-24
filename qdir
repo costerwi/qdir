@@ -1,7 +1,7 @@
 #!/bin/env python3
 """qdir implements first-in, first-out sequential job queue for the local machine.
 
-The queue is maintained as a directory of tiny job queue files (.q files).
+The queue is maintained as a directory of tiny job queue files (.qdir files).
 When a new job is submitted it will make a list of all job queue files ahead of it and then create its own queue file in the queue directory.
 The job will not execute its command until all of the preceeding job queue files are gone.
 Once a command is completed the job will remove its queue file.
@@ -21,10 +21,10 @@ Usage:
     qdir
 
     # Dequeue or terminate a list of jobId numbers
-    qdir jobId [jobId ...]
+    qdir -d jobId [jobId ...]
 
     # Show this help
-    qdir help
+    qdir -h
 
 Carl Osterwisch, January 2024
 """
