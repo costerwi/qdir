@@ -193,6 +193,7 @@ def parseArguments(argv):
 
 def enqueue(cmd):
     "Submit cmd to the job queue"
+    import shutil
     previousJobs = getQueuedJobs()
     if os.name == "posix":
         # fork to background TODO similar for windows
@@ -202,6 +203,8 @@ def enqueue(cmd):
     jobId = str(os.getpid())  # process id of this script
     job = None  # subprocess running the cmd, if any
     qFile = None  # qFile associated with this job
+    if not shutil.which(cmd[0]) and options.verbose >= 1:
+        print('WARNING: {} is not in PATH'.format(cmd[0]), file=sys.stderr)
 
     def terminateJob(sig=None, frame=None):
         """Terminate this job if running or dequeue if not"""
