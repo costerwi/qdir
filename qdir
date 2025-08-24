@@ -42,22 +42,37 @@ from tempfile import gettempdir
 from time import sleep, asctime, perf_counter
 
 parser = ArgumentParser()
+parser.add_argument('-d', '--dequeue', action='store_true',
+        help='Dequeue the job names or jobIds listed in args. '
+            'Default behavior is to enqueue one job')
 parser.add_argument('-N', '--name',
-        help='Name for the job',
+        help='Name for the job. Default is args[0]',
         default=os.environ.get("PBS_JOBNAME"))
-parser.add_argument('-q', '--qdir',
-        help='Directory to store the queue files',
-        type=Path, default=os.environ.get("QDIR", gettempdir()))
+default=os.environ.get("QDIR", gettempdir())
+parser.add_argument('-q', '--qdir', type=Path,
+        help='Directory to store the queue files. Default is {}'.format(default),
+        default=default)
+default=os.environ.get("QDIR_POLL_INTERVAL", 10)
 parser.add_argument('-c', '--interval', type=int,
-        help='Polling interval in seconds',
-        default=int(os.environ.get("QDIR_POLL_INTERVAL", 10)))
+        help='Polling interval in seconds. Default is {}'.format(default),
+        default=default)
+default = os.environ.get('QDIR_INFO', '{jobId:8} {owner:10} {status:35} {name}')
+parser.add_argument('-i', '--info',
+        help='Specify format of job information. Default is {!r}'.format(default),
+        default=default)
+default=os.environ.get("QDIR_LOGNAME", "{name}._{jobId}")
 parser.add_argument('-o', '--output',
-        help='Output file name',
-        default=os.environ.get("QDIR_LOGNAME", "{name}._{jobId}"))
+        help='File name for stdout and stderr. Default is {!r}'.format(default),
+        default=default)
+default=os.environ.get("QDIR_VERBOSE", 2)
 parser.add_argument('-v', '--verbose', type=int,
-        help='Verbosity level',
-        default=os.environ.get("QDIR_VERBOSE", 2))
-parser.add_argument('args', nargs='*')
+        help='Verbosity level. Default is {}'.format(default),
+        default=default)
+parser.add_argument('args', nargs='*',
+        help='The command to enqueue and any optional arguments. '
+             'This command must be in your PATH or explicitly specified. '
+             'If no command is given then the currently queued jobs are listed.',
+        )
 
 qFileSuffix = os.environ.get("QDIR_SUFFIX", ".qdir")
 dprefix = os.environ.get("QDIR_DPREFIX",
@@ -85,14 +100,16 @@ if os.name == 'nt':
 
 def getJobInfo(qFilePath):
     """Return jobId, user, and command to be run by the qFilePath"""
-    info = [qFilePath.stem, qFilePath.owner()]
+    info = {
+            'jobId': qFilePath.stem,
+            'owner': qFilePath.owner()
+            }
     try:
-        cmd = ""
         with qFilePath.open() as qFile:
             for line in qFile:
-                status = line.strip() # capture last line
-                cmd = cmd or status # capture first line
-        info.extend([status, cmd])
+                strip = line.strip()
+                info['status'] = strip # capture last line
+                info.setdefault('name', strip) # capture first line
     except Exception as e:
         if options.verbose >= 3: print(e, file=sys.stderr)
     return info
@@ -124,7 +141,8 @@ def getQueuedJobs():
 
         # Otherwise, the process may have died or the computer was rebooted with
         # this job in the queue. This orphaned queue may be removed.
-        print("Removing orphaned queue file", *getJobInfo(path), sep="\t", file=sys.stderr)
+        print("Removing orphaned queue file",
+               options.info.format(**getJobInfo(path)), file=sys.stderr)
         try:
             path.unlink()
         except OSError as e:
@@ -144,16 +162,17 @@ def qstat():
         print("No jobs queued")
     else:
         if options.verbose >= 1:
-            print("JobId", "User", "Status" + 26*' ', "Name", sep="\t")
+            print(options.info.format(jobId="JobId", owner="Owner",
+                status="Status", name="Name"))
         for qFilePath in queuedJobs:
-            print(*getJobInfo(qFilePath), sep="\t")
+            print(options.info.format(**getJobInfo(qFilePath)))
 
 
 def parseArguments(argv):
     import re
     import shlex
 
-    # Parse arguments to find cmd
+    # Parse commandline arguments to find cmd
     options, unknown = parser.parse_known_args(argv)
 
     args = options.args
@@ -301,16 +320,24 @@ def enqueue(cmd):
     terminateJob() # Clean up at the end
 
 
-def dequeueJobs(jobIdList):
-    "Remove a list of jobIds from the queue"
-    queuedJobs = getQueuedJobs()
-    for jobId in jobIdList:
-        qFilePath = (options.qdir/str(jobId)).with_suffix(qFileSuffix)
-        if not qFilePath in queuedJobs:
-            print(jobId, 'is not queued')
-        else:
-            print('Dequeing', *getJobInfo(qFilePath), sep='\t')
-            qFilePath.unlink() # Simply delete the qFile
+def dequeueJobs(jobList):
+    "Remove a list of jobIds or job names from the queue"
+    queuedJobs = {}
+    queuedJobs.update([(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()])
+
+    jobOptions = options
+    while len(jobList) > 0:
+        hits = 0
+        for qFilePath, qFileInfo in queuedJobs.items():
+            if jobList[0] == qFileInfo['jobId'] or jobOptions.name == qFileInfo['name']:
+                if options.verbose >= 2:
+                    print('Dequeing', options.info.format(**qFileInfo))
+                qFilePath.unlink() # Simply delete the qFile
+                hits += 1
+        if hits == 0 and options.verbose >= 1:
+            print(jobList[0], 'is not queued', file=sys.stderr)
+        jobList.pop(0)
+        _, jobOptions = parseArguments(jobList)
 
 
 def humanDuration(seconds):
@@ -332,8 +359,8 @@ if __name__ == "__main__":
     if len(args) == 0:
         # No arguments: Display a list of jobs in the queue
         qstat()
-    elif all(arg.isnumeric() for arg in args):
-        # All integer arguments: Dequeue these jobId numbers
+    elif options.dequeue:
+        # Dequeue these jobId numbers or job names
         dequeueJobs(args)
     else:
         # Enqueue a new command
