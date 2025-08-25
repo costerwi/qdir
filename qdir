@@ -216,7 +216,7 @@ def qstat():
             print(options.info.format(**getJobInfo(qFilePath)))
 
 
-def parseArguments(argv: list[str]) -> tuple[list[str], Namespace]:
+def parseArguments(argv: list[str]) -> Namespace:
     """Parse the given list of arguments
 
     Uses commandline arguments for top priority followed by in-file directives
@@ -231,16 +231,14 @@ def parseArguments(argv: list[str]) -> tuple[list[str], Namespace]:
     import shlex
 
     # Parse commandline arguments to find cmd
-    options, unknown = parser.parse_known_args(argv)
+    options = parser.parse_args(argv)
 
-    args = options.args
-
-    # Scan cmd script for optional directives
+    # Scan args[0] for optional file directives
     directives = []
     dprefixRe = re.compile(dprefix)
     commentRe = re.compile("(#|@?(?i:rem))")
     try:
-        with open(args[0]) as jobScript:
+        with open(options.args[0]) as jobScript:
             for line in jobScript:
                 m = dprefixRe.match(line)
                 if m:
@@ -253,20 +251,25 @@ def parseArguments(argv: list[str]) -> tuple[list[str], Namespace]:
                     break  # otherwise stop processing
     except:
         pass
+    # Parse file directives
+    dirNamespace, unknown = parser.parse_known_args(directives)
 
-    # Parse directives and commandline arguments
-    options, unknown = parser.parse_known_args(directives + argv)
-    del options.args  # directives may not set args
-    if not options.name and len(args) > 0:
-        options.name = args[0]
+    # Prevent setting some file directives
+    omit = {"args", "dequeue", "full"}
+    for key, value in vars(dirNamespace).items():
+        if key in omit or key in options:
+            continue  # argv settings are higher priority
+        vars(options)[key] = value
+
+    if not options.name and len(options.args) > 0:
+        options.name = options.args[0]  # default name
     if unknown and options.verbose >= 2:
-        print("WARNING: Unknown arguments", *unknown, file=sys.stderr)
+        print("WARNING: Unknown file directives", *unknown, file=sys.stderr)
     if options.verbose >= 5:
         print("Arguments", argv, file=sys.stderr)
         print("Directives", directives, file=sys.stderr)
         print("options", options, file=sys.stderr)
-        print("args", args, file=sys.stderr)
-    return args, options
+    return options
 
 
 def enqueue(cmd: list[str]):
@@ -407,11 +410,13 @@ def fullDetails(jobList: list[str]):
         if hits == 0 and options.verbose >= 1:
             print(jobList[0], "is not queued", file=sys.stderr)
         jobList.pop(0)
-        _, jobOptions = parseArguments(jobList)
+        jobOptions = parseArguments(jobList)
 
 
 def dequeueJobs(jobList: list[str]):
     "Remove a list of jobIds or job names from the queue"
+    if 0 == len(jobList):
+        sys.exit("ERROR: No jobs spedified to dequeue")
     queuedJobs: dict[Path, dict] = {}
     queuedJobs.update(
         [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
@@ -432,7 +437,7 @@ def dequeueJobs(jobList: list[str]):
         if hits == 0 and options.verbose >= 1:
             print(jobList[0], "is not queued", file=sys.stderr)
         jobList.pop(0)
-        _, jobOptions = parseArguments(jobList)
+        jobOptions = parseArguments(jobList)
 
 
 def humanDuration(seconds: float) -> str:
@@ -443,7 +448,7 @@ def humanDuration(seconds: float) -> str:
 
 
 if __name__ == "__main__":
-    args, options = parseArguments(sys.argv[1:])
+    options = parseArguments(sys.argv[1:])
     if not options.qdir.is_dir():
         sys.exit(f"ERROR: The QDIR directory {options.qdir} does not exist")
     if not os.access(options.qdir, os.W_OK):
@@ -453,15 +458,15 @@ if __name__ == "__main__":
             f"The QDIR_POLL_INTERVAL {options.interval} must be seconds greater than 0"
         )
 
-    if len(args) == 0:
-        # No arguments: Display a list of jobs in the queue
-        qstat()
-    elif options.full:
-        # Report detailed information about specified jobs
-        fullDetails(args)
+    if options.full:
+        # Report detailed information about jobs in the queue
+        fullDetails(options.args)
     elif options.dequeue:
         # Dequeue these jobId numbers or job names
-        dequeueJobs(args)
+        dequeueJobs(options.args)
+    elif len(options.args) == 0:
+        # No arguments: Report a list of jobs in the queue
+        qstat()
     else:
         # Enqueue a new command
-        enqueue(args)
+        enqueue(options.args)
