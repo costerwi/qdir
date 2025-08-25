@@ -50,6 +50,12 @@ parser.add_argument(
     "Default behavior is to enqueue one job",
 )
 parser.add_argument(
+    "-f",
+    "--full",
+    action="store_true",
+    help="Report full information about the job names or jobIds listed in args.",
+)
+parser.add_argument(
     "-N",
     "--name",
     help="Name for the job. Default is args[0]",
@@ -344,6 +350,7 @@ def enqueue(cmd: list[str]):
             # Append the job starting status to qFile
             stat = os.stat(qFile.name)
             with open(qFile.name, "a") as qFile:
+                print("Waited", humanDuration(perf_counter() - startTime), file=qFile)
                 print("Started", asctime(), file=qFile)
             # Keep mtime unchanged so the job files sort correctly
             os.utime(qFile.name, (stat.st_atime, stat.st_mtime))
@@ -375,6 +382,34 @@ def enqueue(cmd: list[str]):
     terminateJob()  # Clean up at the end
 
 
+def fullDetails(jobList: list[str]):
+    "Report full details about specified jobs"
+    queuedJobs: dict[Path, dict] = {}
+    queuedJobs.update(
+        [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
+    )
+    if 0 == len(jobList):
+        jobList = [qFileInfo["jobId"] for qFileInfo in queuedJobs.values()]
+
+    jobOptions = options
+    while len(jobList) > 0:
+        hits = 0
+        for qFilePath, qFileInfo in queuedJobs.items():
+            if not qFileInfo:
+                continue
+            if jobList[0] == qFileInfo["jobId"] or jobOptions.name == qFileInfo["name"]:
+                print("\n" + str(qFilePath))
+                with open(qFilePath) as qFile:
+                    for line in qFile:
+                        print(line, end="")
+                qFileInfo.clear()  # Prevent repeated matches
+                hits += 1
+        if hits == 0 and options.verbose >= 1:
+            print(jobList[0], "is not queued", file=sys.stderr)
+        jobList.pop(0)
+        _, jobOptions = parseArguments(jobList)
+
+
 def dequeueJobs(jobList: list[str]):
     "Remove a list of jobIds or job names from the queue"
     queuedJobs: dict[Path, dict] = {}
@@ -400,7 +435,7 @@ def dequeueJobs(jobList: list[str]):
         _, jobOptions = parseArguments(jobList)
 
 
-def humanDuration(seconds: int) -> str:
+def humanDuration(seconds: float) -> str:
     for unit, per in ("days", 86400), ("hours", 3600), ("minutes", 60):
         if seconds >= 1.1 * per:
             return "{:.2g} {}".format(seconds / per, unit)
@@ -421,6 +456,9 @@ if __name__ == "__main__":
     if len(args) == 0:
         # No arguments: Display a list of jobs in the queue
         qstat()
+    elif options.full:
+        # Report detailed information about specified jobs
+        fullDetails(args)
     elif options.dequeue:
         # Dequeue these jobId numbers or job names
         dequeueJobs(args)
