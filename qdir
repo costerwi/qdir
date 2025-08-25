@@ -203,7 +203,7 @@ def qstat():
     if options.verbose >= 2:
         print("Queue directory", options.qdir)
     queuedJobs = getQueuedJobs()
-    if not queuedJobs:
+    if not queuedJobs and options.verbose >= 2:
         print("No jobs queued")
     else:
         if options.verbose >= 1:
@@ -392,6 +392,8 @@ def fullDetails(jobList: list[str]):
     )
     if 0 == len(jobList):
         jobList = [qFileInfo["jobId"] for qFileInfo in queuedJobs.values()]
+        if not jobList and options.verbose >= 2:
+            print("No jobs queued")
 
     jobOptions = options
     while len(jobList) > 0:
@@ -400,10 +402,16 @@ def fullDetails(jobList: list[str]):
             if not qFileInfo:
                 continue
             if jobList[0] == qFileInfo["jobId"] or jobOptions.name == qFileInfo["name"]:
-                print("\n" + str(qFilePath))
-                with open(qFilePath) as qFile:
-                    for line in qFile:
-                        print(line, end="")
+                print(
+                    "\nJobId: {jobId}\nOwner: {owner}\nName: ".format(**qFileInfo),
+                    end="",
+                )
+                try:
+                    with open(qFilePath) as qFile:
+                        for line in qFile:
+                            print(line, end="")
+                except:
+                    print()
                 qFileInfo.clear()  # Prevent repeated matches
                 hits += 1
         if hits == 0 and options.verbose >= 1:
