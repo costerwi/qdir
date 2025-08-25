@@ -9,7 +9,7 @@ Once a command is completed the job will remove its queue file.
 Multiple users should share the same queue directory to ensure one job is executed at a time among the group of users.
 The Linux default location is the system /tmp directory which requires no additional configuration for multiple users.
 The Windows default location will be the user's temporary directory which will work fine on a single user machine.
-An alternative directory may be selected by predefining the QDIR environment variable.
+An alternative directory may be selected by predefining the QDIR environment variable or the --qdir commandline option.
 
 Usage:
     The behavior is different depending on the arguments
@@ -20,10 +20,10 @@ Usage:
     # List the currently queued jobs:
     qdir
 
-    # Dequeue or terminate a list of jobId numbers
+    # Dequeue or terminate a list of jobId numbers or names
     qdir -d jobId [jobId ...]
 
-    # Show this help
+    # Show help
     qdir -h
 
 Carl Osterwisch, January 2024
