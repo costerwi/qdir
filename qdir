@@ -251,15 +251,14 @@ def parseArguments(argv: list[str]) -> Namespace:
                     break  # otherwise stop processing
     except:
         pass
-    # Parse file directives
+    # Parse file directives to check for errors
     dirNamespace, unknown = parser.parse_known_args(directives)
+    omit = ["args", "dequeue", "full"]
+    if any(vars(dirNamespace)[o] for o in omit):
+        sys.exit("ERROR: {} is not a permitted file directive")
 
-    # Prevent setting some file directives
-    omit = {"args", "dequeue", "full"}
-    for key, value in vars(dirNamespace).items():
-        if key in omit or key in options:
-            continue  # argv settings are higher priority
-        vars(options)[key] = value
+    # Finally, parse the combined options with priority for argv
+    options, unknown = parser.parse_known_args(directives + argv)
 
     if not options.name and len(options.args) > 0:
         options.name = options.args[0]  # default name
