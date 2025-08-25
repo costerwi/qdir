@@ -31,7 +31,7 @@ Carl Osterwisch, January 2024
 
 __version__ = "0.11.0"
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 import os
 from os.path import exists
 from pathlib import Path
@@ -63,7 +63,7 @@ parser.add_argument(
     help="Directory to store the queue files. Default is {}".format(default),
     default=default,
 )
-default = os.environ.get("QDIR_POLL_INTERVAL", 10)
+default = os.environ.get("QDIR_POLL_INTERVAL", "10")
 parser.add_argument(
     "-c",
     "--interval",
@@ -85,7 +85,7 @@ parser.add_argument(
     help="File name for stdout and stderr. Default is {!r}".format(default),
     default=default,
 )
-default = os.environ.get("QDIR_VERBOSE", 2)
+default = os.environ.get("QDIR_VERBOSE", "2")
 parser.add_argument(
     "-v",
     "--verbose",
@@ -210,7 +210,17 @@ def qstat():
             print(options.info.format(**getJobInfo(qFilePath)))
 
 
-def parseArguments(argv: list[str]):
+def parseArguments(argv: list[str]) -> tuple[list[str], Namespace]:
+    """Parse the given list of arguments
+
+    Uses commandline arguments for top priority followed by in-file directives
+    and lastly default values.
+
+    In-file directives are the same format as commandline options and should
+    occur in comment lines at the beginning of the job script.
+    Directive lines and are preceeded by the dprefix regular expression.
+    """
+
     import re
     import shlex
 
