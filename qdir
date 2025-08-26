@@ -390,10 +390,10 @@ def fullDetails(jobList: list[str]):
     queuedJobs.update(
         [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
     )
-    if 0 == len(jobList):
+    if not queuedJobs and options.verbose >= 2:
+        print("No jobs queued")
+    if not jobList:
         jobList = [qFileInfo["jobId"] for qFileInfo in queuedJobs.values()]
-        if not jobList and options.verbose >= 2:
-            print("No jobs queued")
 
     jobOptions = options
     while len(jobList) > 0:
@@ -422,8 +422,8 @@ def fullDetails(jobList: list[str]):
 
 def dequeueJobs(jobList: list[str]):
     "Remove a list of jobIds or job names from the queue"
-    if 0 == len(jobList):
-        sys.exit("ERROR: No jobs spedified to dequeue")
+    if not jobList:
+        sys.exit("ERROR: No jobs specified to dequeue")
     queuedJobs: dict[Path, dict] = {}
     queuedJobs.update(
         [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
@@ -436,7 +436,7 @@ def dequeueJobs(jobList: list[str]):
             if jobList[0] == qFileInfo.get("jobId") or jobOptions.name == qFileInfo.get(
                 "name"
             ):
-                if options.verbose >= 2:
+                if options.verbose >= 3:
                     print("Dequeing", options.info.format(**qFileInfo))
                 qFilePath.unlink()  # Simply delete the qFile
                 qFileInfo.clear()  # Prevent repeated matches
