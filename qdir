@@ -29,7 +29,7 @@ Usage:
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.11.0"
+__version__ = "0.11.1"
 
 from argparse import ArgumentParser, Namespace
 import os
@@ -231,14 +231,14 @@ def parseArguments(argv: list[str]) -> Namespace:
     import shlex
 
     # Parse commandline arguments to find cmd
-    options = parser.parse_args(argv)
+    argvNamespace = parser.parse_args(argv)
 
     # Scan args[0] for optional file directives
     directives = []
     dprefixRe = re.compile(dprefix)
     commentRe = re.compile("(#|@?(?i:rem))")
     try:
-        with open(options.args[0]) as jobScript:
+        with open(argvNamespace.args[0]) as jobScript:
             for line in jobScript:
                 m = dprefixRe.match(line)
                 if m:
@@ -251,14 +251,14 @@ def parseArguments(argv: list[str]) -> Namespace:
                     break  # otherwise stop processing
     except:
         pass
-    # Parse file directives to check for errors
-    dirNamespace, unknown = parser.parse_known_args(directives)
-    omit = ["args", "dequeue", "full"]
-    if any(vars(dirNamespace)[o] for o in omit):
-        sys.exit("ERROR: {} is not a permitted file directive")
+    _, unknown = parser.parse_known_args(directives)
 
     # Finally, parse the combined options with priority for argv
-    options, unknown = parser.parse_known_args(directives + argv)
+    options, _ = parser.parse_known_args(directives + argv)
+
+    # Always overwrite these options which must come from argv
+    argvOnly = "args", "dequeue", "full"
+    vars(options).update({k: vars(argvNamespace).get(k) for k in argvOnly})
 
     if not options.name and len(options.args) > 0:
         options.name = options.args[0]  # default name
