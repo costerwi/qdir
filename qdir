@@ -236,7 +236,7 @@ def parseArguments(argv: list[str]) -> Namespace:
     # Scan args[0] for optional file directives
     directives = []
     dprefixRe = re.compile(dprefix)
-    commentRe = re.compile("(#|@?(?i:rem))")
+    commentRe = re.compile("(#|@?(?i:rem|echo))")
     try:
         with open(argvNamespace.args[0]) as jobScript:
             for line in jobScript:
