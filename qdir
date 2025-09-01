@@ -8,7 +8,7 @@ Each job will delete its own queue file upon completion so the next job can begi
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.11.1"
+__version__ = "0.12.0"
 
 from argparse import ArgumentParser, Namespace
 import os
@@ -41,13 +41,13 @@ parser.add_argument(
     help="Name for the job. Default is args[0]",
     default=os.environ.get("PBS_JOBNAME"),
 )
-default = os.environ.get("QDIR", gettempdir())
+default = os.environ.get("QDIR_QUEUE", gettempdir())
 parser.add_argument(
     "-q",
-    "--qdir",
+    "--queue",
     type=Path,
     help="Directory to store the queue files. "
-    "Default is environment variable QDIR or {}".format(default),
+    "Default is environment variable QDIR_QUEUE or {}".format(default),
     default=default,
 )
 default = os.environ.get("QDIR_POLL_INTERVAL", "10")
@@ -177,7 +177,7 @@ def getQueuedJobs():
 
     queuedJobs = [
         filePath
-        for filePath in options.qdir.glob("*" + qFileSuffix)
+        for filePath in options.queue.glob("*" + qFileSuffix)
         if is_qFile(filePath)
     ]
     return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
@@ -186,7 +186,7 @@ def getQueuedJobs():
 def qstat():
     "Print a list of queued jobs"
     if options.verbose >= 2:
-        print("Queue directory", options.qdir)
+        print("Queue directory", options.queue)
     queuedJobs = getQueuedJobs()
     if not queuedJobs and options.verbose >= 2:
         print("No jobs queued")
@@ -309,7 +309,7 @@ def enqueue(cmd: list[str]):
     signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
 
     # Create the qFile in qdir directory with its name matching this jobId
-    with (options.qdir / jobId).with_suffix(qFileSuffix).open("w") as qFile:
+    with (options.queue / jobId).with_suffix(qFileSuffix).open("w") as qFile:
         os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
         status = "Queued " + asctime()
         if options.verbose >= 2:
@@ -441,10 +441,10 @@ def humanDuration(seconds: float) -> str:
 
 if __name__ == "__main__":
     options = parseArguments(sys.argv[1:])
-    if not options.qdir.is_dir():
-        sys.exit(f"ERROR: The QDIR directory {options.qdir} does not exist")
-    if not os.access(options.qdir, os.W_OK):
-        sys.exit(f"ERROR: The QDIR directory {options.qdir} is not writable")
+    if not options.queue.is_dir():
+        sys.exit(f"ERROR: The QDIR directory {options.queue} does not exist")
+    if not os.access(options.queue, os.W_OK):
+        sys.exit(f"ERROR: The QDIR directory {options.queue} is not writable")
     if not options.interval > 0:
         sys.exit(
             f"The QDIR_POLL_INTERVAL {options.interval} must be seconds greater than 0"
