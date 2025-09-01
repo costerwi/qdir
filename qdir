@@ -1,31 +1,10 @@
 #!/bin/env python3
-"""qdir implements first-in, first-out sequential job queue for the local machine.
+"""Implementation of a first-in, first-out sequential job queue for the local machine.
 
-The queue is maintained as a directory of tiny job queue files (.qdir files).
-When a new job is submitted it will make a list of all job queue files ahead of it and then create its own queue file in the queue directory.
-The job will not execute its command until all of the preceeding job queue files are gone.
-Once a command is completed the job will remove its queue file.
-
-Multiple users should share the same queue directory to ensure one job is executed at a time among the group of users.
-The Linux default location is the system /tmp directory which requires no additional configuration for multiple users.
-The Windows default location will be the user's temporary directory which will work fine on a single user machine.
-An alternative directory may be selected by predefining the QDIR environment variable or the --qdir commandline option.
-
-Usage:
-    The behavior is different depending on the arguments
-
-    # Add a job to the queue:
-    qdir cmd [with optional arguments]
-
-    # List the currently queued jobs:
-    qdir
-
-    # Dequeue or terminate a list of jobId numbers or names
-    qdir -d jobId [jobId ...]
-
-    # Show help
-    qdir -h
-
+The queue is maintained as a directory of tiny job queue files.
+When a new job is submitted it will identify any existing job queue files and then add its own queue file to the directory.
+No job will begin until all the preceeding queue files are gone.
+Each job will delete its own queue file upon completion so the next job can begin.
 Carl Osterwisch, January 2024
 """
 
@@ -41,19 +20,20 @@ import sys
 from tempfile import gettempdir
 from time import sleep, asctime, perf_counter
 
-parser = ArgumentParser(epilog="Version " + __version__)
+parser = ArgumentParser(description=__doc__, epilog="Version " + __version__)
 parser.add_argument(
     "-d",
     "--dequeue",
     action="store_true",
-    help="Dequeue the job names or jobIds listed in args. "
+    help="Dequeue or terminate the job names or jobIds listed in args. "
     "Default behavior is to enqueue one job",
 )
 parser.add_argument(
     "-f",
     "--full",
     action="store_true",
-    help="Report full information about the job names or jobIds listed in args.",
+    help="Report full detailed information about the job names or jobIds listed in args. "
+    "All jobs are reported if none are specified.",
 )
 parser.add_argument(
     "-N",
@@ -66,7 +46,8 @@ parser.add_argument(
     "-q",
     "--qdir",
     type=Path,
-    help="Directory to store the queue files. Default is {}".format(default),
+    help="Directory to store the queue files. "
+    "Default is environment variable QDIR or {}".format(default),
     default=default,
 )
 default = os.environ.get("QDIR_POLL_INTERVAL", "10")
@@ -74,21 +55,24 @@ parser.add_argument(
     "-c",
     "--interval",
     type=int,
-    help="Polling interval in seconds. Default is {}".format(default),
+    help="Polling interval in seconds. "
+    "Default is environment variable QDIR_POLL_INTERVAL or {}".format(default),
     default=default,
 )
 default = os.environ.get("QDIR_INFO", "{jobId:8} {owner:10} {status:35} {name}")
 parser.add_argument(
     "-i",
     "--info",
-    help="Specify format of job information. Default is {!r}".format(default),
+    help="Specify format of job information. "
+    "Default is environment variable QDIR_INFO or {!r}".format(default),
     default=default,
 )
 default = os.environ.get("QDIR_LOGNAME", "{name}._{jobId}")
 parser.add_argument(
     "-o",
     "--output",
-    help="File name for stdout and stderr. Default is {!r}".format(default),
+    help="File name for combined stdout and stderr. "
+    "Default is environment variable QDIR_LOGNAME or {!r}".format(default),
     default=default,
 )
 default = os.environ.get("QDIR_VERBOSE", "2")
@@ -96,7 +80,8 @@ parser.add_argument(
     "-v",
     "--verbose",
     type=int,
-    help="Verbosity level. Default is {}".format(default),
+    help="Verbosity level. "
+    "Default is environment variable QDIR_VERBOSE or {}".format(default),
     default=default,
 )
 parser.add_argument(
@@ -145,8 +130,8 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
         with qFilePath.open() as qFile:
             for line in qFile:
                 strip = line.strip()
-                info["status"] = strip  # capture last line
                 info.setdefault("name", strip)  # capture first line
+                info["status"] = strip  # capture last line
     except Exception as e:
         if options.verbose >= 3:
             print(e, file=sys.stderr)
