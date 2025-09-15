@@ -416,18 +416,18 @@ def dequeueJobs(jobList: list[str]):
 
     jobOptions = options
     while len(jobList) > 0:
-        hits = 0
         for qFilePath, qFileInfo in queuedJobs.items():
-            if jobList[0] == qFileInfo.get("jobId") or jobOptions.name == qFileInfo.get(
-                "name"
-            ):
+            qJobId = qFileInfo.get("jobId", "")
+            if jobList[0] == qJobId or jobOptions.name == qFileInfo.get("name"):
+                # Matched either jobId or job name
                 if options.verbose >= 3:
                     print("Dequeing", options.info.format(**qFileInfo))
-                qFilePath.unlink()  # Simply delete the qFile
+                os.kill(int(qJobId), signal.SIGTERM)
                 qFileInfo.clear()  # Prevent repeated matches
-                hits += 1
-        if hits == 0 and options.verbose >= 1:
-            print(jobList[0], "is not queued", file=sys.stderr)
+                break
+        else:  # Failed to find job
+            if options.verbose >= 1:
+                print(jobList[0], "is not queued", file=sys.stderr)
         jobList.pop(0)
         jobOptions = parseArguments(jobList)
 
