@@ -8,7 +8,7 @@ Each job will delete its own queue file upon completion so the next job can begi
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.13.0"
+__version__ = "0.14.0"
 
 from argparse import ArgumentParser, Namespace
 import os
@@ -59,7 +59,7 @@ parser.add_argument(
     "Default is environment variable QDIR_POLL_INTERVAL or {}".format(default),
     default=default,
 )
-default = os.environ.get("QDIR_INFO", "{jobId:8} {owner:10} {status:35} {name}")
+default = os.environ.get("QDIR_INFO", "{jobId:8} {owner:12} {status:35} {name}")
 parser.add_argument(
     "-i",
     "--info",
