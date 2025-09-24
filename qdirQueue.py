@@ -22,7 +22,8 @@ class QDirQueue(Queue):
         from textwrap import dedent
         from string import Template
 
-        Queue.__init__(self)
+        if hasattr(Queue, '__init__'):
+            Queue.__init__(self)
         if os.name == "posix":
             self.extension = ".sh"
             self.template = Template(
