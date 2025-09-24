@@ -125,7 +125,12 @@ if os.name == "nt":
 
 def getJobInfo(qFilePath: Path) -> dict[str, str]:
     """Return jobId, user, and command to be run by the qFilePath"""
-    info = {"jobId": qFilePath.stem, "owner": qFilePath.owner()}
+    info = {
+        "jobId": qFilePath.stem,
+        "owner": qFilePath.owner(),
+        "status": "",
+        "name": "",
+    }
     try:
         with qFilePath.open() as qFile:
             for line in qFile:
@@ -133,6 +138,7 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
                 info.setdefault("name", strip)  # capture first line
                 info["status"] = strip  # capture last line
     except Exception as e:
+        info["status"] = e.strerror
         if options.verbose >= 3:
             print(e, file=sys.stderr)
     return info
@@ -242,7 +248,7 @@ def enqueue(cmd: list[str]):
     "Submit cmd to the job queue"
     import shutil
 
-    if options.verbose >=1 and not shutil.which(cmd[0]):
+    if options.verbose >= 1 and not shutil.which(cmd[0]):
         print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
 
     if os.name == "posix":
@@ -396,8 +402,8 @@ def fullDetails(jobList: list[str]):
                     with open(qFilePath) as qFile:
                         for line in qFile:
                             print(line, end="")
-                except:
-                    print()
+                except Exception as e:
+                    print(e)
                 qFileInfo.clear()  # Prevent repeated matches
                 hits += 1
         if hits == 0 and options.verbose >= 1:
