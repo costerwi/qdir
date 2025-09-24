@@ -8,7 +8,7 @@ Each job will delete its own queue file upon completion so the next job can begi
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.14.0"
+__version__ = "0.14.1"
 
 from argparse import ArgumentParser, Namespace
 import os
@@ -124,7 +124,7 @@ if os.name == "nt":
 
 
 def getJobInfo(qFilePath: Path) -> dict[str, str]:
-    """Return jobId, user, and command to be run by the qFilePath"""
+    """Return information about the job specified in qFilePath"""
     info = {
         "jobId": qFilePath.stem,
         "owner": qFilePath.owner(),
@@ -144,7 +144,7 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
     return info
 
 
-def getQueuedJobs():
+def getQueuedJobs() -> list[Path]:
     "Return a list of qFilePath for currently queued jobs, sorted oldest to newest"
 
     # Collecct a set of active process ids
@@ -271,19 +271,16 @@ def enqueue(cmd: list[str]):
             os.unlink(qFile.name)  # remove job file
         if hasattr(job, "pid"):  # job is or was running
             if job.poll() is None:
+                # job is still running
                 if options.verbose >= 2:
                     result = "Killed"
-                if os.name == "posix":
-                    # pass SIGTERM signal to all child processes in this process group
-                    try:
-                        os.killpg(os.getpgid(job.pid), signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
-                else:
+                if os.name == "nt":
                     job.send_signal(signal.CTRL_BREAK_EVENT)
-                    sleep(options.interval)
-                    job.terminate()
+                else:
+                    # pass SIGTERM signal to all child processes in this process group
+                    os.killpg(os.getpgid(job.pid), signal.SIGTERM)
             elif options.verbose >= 1:
+                # job is no longer running; check returncode
                 if job.returncode <= 0:
                     result = "Done"
                 else:
@@ -295,7 +292,10 @@ def enqueue(cmd: list[str]):
             print(jobId, options.name, result + runTime, sep="\t", file=sys.stderr)
             job = result  # don't report result again
 
-    signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
+    if os.name == "nt":
+        signal.signal(signal.SIGBREAK, terminateJob)  # catch CTRL_BREAK_EVENT
+    else:
+        signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
 
     # Create the qFile in qdir directory with its name matching this jobId
     with (options.queue / jobId).with_suffix(qFileSuffix).open("w") as qFile:
@@ -429,7 +429,12 @@ def dequeueJobs(jobList: list[str]):
                 # Matched either jobId or job name
                 if options.verbose >= 3:
                     print("Dequeing", options.info.format(**qFileInfo))
-                os.kill(int(qJobId), signal.SIGTERM)
+                if os.name == "posix":
+                    # This signal takes immediate effect on Linux
+                    os.kill(int(qJobId), signal.SIGTERM)
+                else:
+                    # This should work on any OS but the effect is delayed by options.interval
+                    qFilePath.unlink()
                 qFileInfo.clear()  # Prevent repeated matches
                 break
         else:  # Failed to find job
