@@ -183,24 +183,6 @@ def getQueuedJobs():
     return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
 
 
-def qstat():
-    "Print a list of queued jobs"
-    if options.verbose >= 2:
-        print("Queue directory", options.queue)
-    queuedJobs = getQueuedJobs()
-    if not queuedJobs and options.verbose >= 2:
-        print("No jobs queued")
-    else:
-        if options.verbose >= 1:
-            print(
-                options.info.format(
-                    jobId="JobId", owner="Owner", status="Status", name="Name"
-                )
-            )
-        for qFilePath in queuedJobs:
-            print(options.info.format(**getJobInfo(qFilePath)))
-
-
 def parseArguments(argv: list[str]) -> Namespace:
     """Parse the given list of arguments
 
@@ -260,18 +242,19 @@ def enqueue(cmd: list[str]):
     "Submit cmd to the job queue"
     import shutil
 
-    previousJobs = getQueuedJobs()
+    if options.verbose >=1 and not shutil.which(cmd[0]):
+        print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
+
     if os.name == "posix":
-        # fork to background TODO similar for windows
+        # fork to background
         if os.fork():
             os._exit(0)
 
+    previousJobs = getQueuedJobs()
     jobId = str(os.getpid())  # process id of this script
     job = None  # subprocess running the cmd, if any
     qFile = None  # qFile associated with this job
     startTime = perf_counter()  # time job was enqueued
-    if not shutil.which(cmd[0]) and options.verbose >= 1:
-        print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
 
     def terminateJob(sig=None, frame=None):
         """Terminate this job if running or dequeue if not"""
@@ -367,6 +350,24 @@ def enqueue(cmd: list[str]):
                 print(e, file=logFile)
 
     terminateJob()  # Clean up at the end
+
+
+def qstat():
+    "Print a list of queued jobs"
+    if options.verbose >= 2:
+        print("Queue directory", options.queue)
+    queuedJobs = getQueuedJobs()
+    if not queuedJobs and options.verbose >= 2:
+        print("No jobs queued")
+    else:
+        if options.verbose >= 1:
+            print(
+                options.info.format(
+                    jobId="JobId", owner="Owner", status="Status", name="Name"
+                )
+            )
+        for qFilePath in queuedJobs:
+            print(options.info.format(**getJobInfo(qFilePath)))
 
 
 def fullDetails(jobList: list[str]):
