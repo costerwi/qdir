@@ -8,7 +8,7 @@ Each job will delete its own queue file upon completion so the next job can begi
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.14.1"
+__version__ = "0.14.2"
 
 from argparse import ArgumentParser, Namespace
 import os
@@ -128,8 +128,6 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
     info = {
         "jobId": qFilePath.stem,
         "owner": qFilePath.owner(),
-        "status": "",
-        "name": "",
     }
     try:
         with qFilePath.open() as qFile:
@@ -141,6 +139,8 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
         info["status"] = e.strerror
         if options.verbose >= 3:
             print(e, file=sys.stderr)
+    info.setdefault("name", "")
+    info.setdefault("status", "")
     return info
 
 
