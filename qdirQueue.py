@@ -61,7 +61,7 @@ class QDirQueue(Queue):
                 set JOB=$job
                 set ABAQUS=$abaqus
                 $exports
-                cd %~dp0
+                cd /D %~dp0
 
                 set t=0
                 :do
