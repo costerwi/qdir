@@ -8,7 +8,7 @@ Each job will delete its own queue file upon completion so the next job can begi
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.14.2"
+__version__ = "0.14.3"
 
 from argparse import ArgumentParser, Namespace
 import os
