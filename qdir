@@ -128,19 +128,30 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
     info = {
         "jobId": qFilePath.stem,
         "owner": qFilePath.owner(),
+        "name": "",
+        "command": "",
+        "directory": "",
+        "behind": "",
+        "status": "",
+        "history": [],
     }
     try:
         with qFilePath.open() as qFile:
             for line in qFile:
-                strip = line.strip()
-                info.setdefault("name", strip)  # capture first line
-                info["status"] = strip  # capture last line
+                split = line.strip().split("\t", 2)
+                if len(split) == 2:
+                    key, value = split
+                    info[key] = value
+                else:
+                    status = split[0]
+                    info["history"].append(status)
+                    info["status"] = status  # latest update
     except Exception as e:
-        info["status"] = e.strerror
+        status = repr(e)
+        info["history"].append(status)
+        info["status"] = status
         if options.verbose >= 3:
             print(e, file=sys.stderr)
-    info.setdefault("name", "")
-    info.setdefault("status", "")
     return info
 
 
@@ -306,11 +317,14 @@ def enqueue(cmd: list[str]):
         os.close(sys.stdout.fileno())  # allow shell to collect qFile.name
         sys.stdout = open(os.devnull, "w")  # block further printing to stdout
 
-        print(options.name, file=qFile)  # qFile contents are for information only
+        print("name", options.name, sep="\t", file=qFile)  # qFile contents are for information only
+        print("command", " ".join(cmd), sep="\t", file=qFile)
+        print("directory", Path.cwd(), sep="\t", file=qFile)
         if previousJobs:
             print(
-                "Behind",
+                "behind",
                 " ".join([job.stem for job in previousJobs]),
+                sep="\t",
                 file=qFile,
             )
         print(status, file=qFile)
@@ -366,14 +380,13 @@ def qstat():
     if not queuedJobs and options.verbose >= 2:
         print("No jobs queued")
     else:
-        if options.verbose >= 1:
-            print(
-                options.info.format(
-                    jobId="JobId", owner="Owner", status="Status", name="Name"
-                )
-            )
+        jobHeadings = None
         for qFilePath in queuedJobs:
-            print(options.info.format(**getJobInfo(qFilePath)))
+            jobInfo = getJobInfo(qFilePath)
+            if not jobHeadings and options.verbose >= 1:
+                jobHeadings = {k: k.upper() for k in jobInfo}
+                print(options.info.format(**jobHeadings))
+            print(options.info.format(**jobInfo))
 
 
 def fullDetails(jobList: list[str]):
@@ -394,16 +407,14 @@ def fullDetails(jobList: list[str]):
             if not qFileInfo:
                 continue
             if jobList[0] == qFileInfo["jobId"] or jobOptions.name == qFileInfo["name"]:
-                print(
-                    "\nJobId: {jobId}\nOwner: {owner}\nName: ".format(**qFileInfo),
-                    end="",
-                )
-                try:
-                    with open(qFilePath) as qFile:
-                        for line in qFile:
-                            print(line, end="")
-                except Exception as e:
-                    print(e)
+                print("")
+                for key, value in qFileInfo.items():
+                    if "status" == key:
+                        continue  # Will be included with full history
+                    if isinstance(value, list):
+                        print(key.upper(), *value, sep="\n")
+                    elif value:
+                        print("{:10} {}".format(key.upper(), value))
                 qFileInfo.clear()  # Prevent repeated matches
                 hits += 1
         if hits == 0 and options.verbose >= 1:
