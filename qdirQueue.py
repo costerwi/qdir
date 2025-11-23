@@ -3,7 +3,7 @@
 This file may be included by adding the following to custom_v6.env:
 
 import sys
-sys.path.append(r"C:/path/to/here")  # specify directory of this file
+sys.path.append(r"C:/path/to/here")  # specify directory of qdirQueue.py
 from qdirQueue import QDirQueue
 queues['default'] = QDirQueue()
 run_mode = BATCH
