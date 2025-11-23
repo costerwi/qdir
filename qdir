@@ -187,7 +187,7 @@ def getQueuedJobs() -> list[Path]:
             file=sys.stderr,
         )
         try:
-            path.unlink()
+            path.unlink(missing_ok=True)
         except OSError as e:
             print(e, file=sys.stderr)
 
@@ -443,7 +443,7 @@ def dequeueJobs(jobList: list[str]):
                     os.kill(int(qJobId), signal.SIGTERM)
                 else:
                     # This should work on any OS but the effect is delayed by options.interval
-                    qFilePath.unlink()
+                    qFilePath.unlink(missing_ok=True)
                 qFileInfo.clear()  # Prevent repeated matches
                 break
         else:  # Failed to find job
