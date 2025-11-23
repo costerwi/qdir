@@ -92,10 +92,11 @@ parser.add_argument(
     "If no command is given then the currently queued jobs are listed.",
 )
 
-qFileSuffix = os.environ.get("QDIR_SUFFIX", ".qdir")
+qFileSuffix = os.environ.get("QDIR_SUFFIX", ".qdir")  # suffix for queue files
 dprefix = os.environ.get(
-    "QDIR_DPREFIX", os.environ.get("PBS_DPREFIX", "(#|@?(?i:rem ))(QDIR|PBS)")
-)
+    "QDIR_DPREFIX",
+    os.environ.get("PBS_DPREFIX", "(#|@?(?i:rem ))(QDIR|PBS)"),
+)  # regular expression prefix used to recognize optional file directives
 
 if os.name == "nt":
 
