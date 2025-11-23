@@ -123,9 +123,9 @@ if os.name == "nt":
         Path.owner = winOwner  # monkey patch if needed
 
 
-def getJobInfo(qFilePath: Path) -> dict[str, str]:
+def getJobInfo(qFilePath: Path) -> dict:
     """Return information about the job specified in qFilePath"""
-    info = {
+    jobInfo = {
         "jobId": qFilePath.stem,
         "owner": qFilePath.owner(),
         "name": "",
@@ -133,26 +133,25 @@ def getJobInfo(qFilePath: Path) -> dict[str, str]:
         "directory": "",
         "behind": "",
         "status": "",
-        "history": [],
+        "history": [],  # list[str]
     }
     try:
         with qFilePath.open() as qFile:
             for line in qFile:
                 split = line.strip().split("\t", 2)
                 if len(split) == 2:
-                    key, value = split
-                    info[key] = value
+                    jobInfo.update([split])
                 else:
                     status = split[0]
-                    info["history"].append(status)
-                    info["status"] = status  # latest update
+                    jobInfo["history"].append(status)
+                    jobInfo["status"] = status  # latest update
     except Exception as e:
         status = repr(e)
-        info["history"].append(status)
-        info["status"] = status
+        jobInfo["history"].append(status)
+        jobInfo["status"] = status
         if options.verbose >= 3:
             print(e, file=sys.stderr)
-    return info
+    return jobInfo
 
 
 def getQueuedJobs() -> list[Path]:
