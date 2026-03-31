@@ -27,7 +27,8 @@ class QDirQueue(Queue):
         if hasattr(Queue, '__init__'):
             Queue.__init__(self)
         if os.name == "posix":
-            self.extension = ".sh"
+            self.extension = ".sh"  # job script filename extension
+            self.setenv = "export"  # command to set environment variables
             self.template = Template(
                 dedent(
                     """\
@@ -53,7 +54,8 @@ class QDirQueue(Queue):
                 )
             )
         else:
-            self.extension = ".cmd"
+            self.extension = ".cmd"  # job script filename extension
+            self.setenv = "set"  # command to set environment variables
             self.template = Template(
                 dedent(
                     """\
@@ -79,9 +81,12 @@ class QDirQueue(Queue):
                 )
             )
 
+
     def exports(self, options, env):
-        "Override to return a string which will be inserted into the command script"
-        pass
+        "Override to return a dict of os.environ settings to be inserted into the command script"
+
+        return {"ABQ_DLALLOCATOR": "1"} # required by Abaqus 2026 Golden BR10000415659
+
 
     def createJobScript(self, options, env):
         "Create script to run Abaqus job"
@@ -90,12 +95,18 @@ class QDirQueue(Queue):
 
         job = options["job"]
         scriptName = os.path.join(".", job + self.extension)
+        exports = self.exports(options, env) or ""
+        if isinstance(exports, dict):
+            # expand dict of os.environ settings to multiline str
+            exports = "\n".join(self.setenv + " {0}={1}".format(*i)
+                    for i in sorted(exports.items()))
+
         with open(scriptName, "w") as jobFile:
             print(
                 self.template.substitute(
                     abaqus=env["ABA_COMMAND"],
                     job=job,
-                    exports=self.exports(options, env) or "",
+                    exports=exports,
                 ),
                 file=jobFile,
             )
