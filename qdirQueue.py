@@ -33,23 +33,23 @@ class QDirQueue(Queue):
                 dedent(
                     """\
                 #!/bin/sh
-                #QDIR --name $job
-                #QDIR --output {name}.log
+                #QDIR --name "$job"
+                #QDIR --output "{name}.log"
                 JOB="$job"
-                ABAQUS=$abaqus
+                ABAQUS="$abaqus"
                 $exports
-                cd $$(dirname $$0)
+                cd "$$(dirname "$$0")"
 
                 let t=0
                 while [[ -e "$$JOB.lck" && $$t != 90 ]]
                 do
                     let t+=5
-                    echo Paused $$t seconds for \"$$JOB.lck\" to clear
+                    echo Paused $$t seconds for $$JOB.lck to clear
                     sleep 5
                 done
 
                 umask 0007
-                exec $$ABAQUS python -u "$$JOB.com"
+                exec "$$ABAQUS" python -u "$$JOB.com"
                 """
                 )
             )
@@ -60,19 +60,19 @@ class QDirQueue(Queue):
                 dedent(
                     """\
                 @echo off
-                rem QDIR --name $job
-                rem QDIR --output {name}.log
-                set JOB=$job
-                set ABAQUS=$abaqus
+                rem QDIR --name "$job"
+                rem QDIR --output "{name}.log"
+                set JOB="$job"
+                set ABAQUS="$abaqus"
                 $exports
-                cd /D %~dp0
+                cd /D "%~dp0"
 
                 set t=0
                 :do
                 if not exist %JOB%.lck goto done
                     set /a t+=5
-                    echo Paused %t% seconds for \"%JOB%.lck\" to clear
-                    ping 127.0.0.1 -n 5 >nul
+                    echo Paused %t% seconds for %JOB%.lck to clear
+                    ping 127.0.0.1 -n 6 >nul
                     if not %t%==90 goto do
                 :done
 
@@ -115,6 +115,7 @@ class QDirQueue(Queue):
         except OSError:
             pass
         return scriptName
+
 
     def submit(self, options, env):
         "Create Abaqus job script and submit it to qdir"
