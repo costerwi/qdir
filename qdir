@@ -63,7 +63,7 @@ default = os.environ.get("QDIR_INFO", "{jobId:8} {owner:12} {status:35} {name}")
 parser.add_argument(
     "-i",
     "--info",
-    help="Specify format of job information. "
+    help="Specify the format of information about jobs in queue. "
     "Default is environment variable QDIR_INFO or {!r}".format(default),
     default=default,
 )
@@ -139,11 +139,11 @@ def getJobInfo(qFilePath: Path) -> dict:
     try:
         with qFilePath.open() as qFile:
             for line in qFile:
-                split = line.strip().split("\t", 2)
-                if len(split) == 2:
-                    jobInfo.update([split])
+                keyValue = line.strip().split("\t", 2)
+                if len(keyValue) == 2:
+                    jobInfo.update([keyValue])
                 else:
-                    status = split[0]
+                    status = keyValue[0]
                     jobInfo["history"].append(status)
                     jobInfo["status"] = status  # latest update
     except Exception as e:
@@ -156,7 +156,7 @@ def getJobInfo(qFilePath: Path) -> dict:
 
 
 def getQueuedJobs() -> list[Path]:
-    "Return a list of qFilePath for currently queued jobs, sorted oldest to newest"
+    """Return a list of qFilePath for currently queued jobs, sorted oldest to newest."""
 
     # Collecct a set of active process ids
     if os.name == "nt":
@@ -256,7 +256,7 @@ def parseArguments(argv: list[str]) -> Namespace:
 
 
 def enqueue(cmd: list[str]):
-    "Submit cmd to the job queue"
+    """Submit cmd to the job queue."""
     import shutil
 
     if options.verbose >= 1 and not shutil.which(cmd[0]):
@@ -376,7 +376,7 @@ def enqueue(cmd: list[str]):
 
 
 def qstat():
-    "Print a list of queued jobs"
+    """Print a list of queued jobs."""
     if options.verbose >= 2:
         print("Queue directory", options.queue)
     queuedJobs = getQueuedJobs()
@@ -393,7 +393,7 @@ def qstat():
 
 
 def fullDetails(jobList: list[str]):
-    "Report full details about specified jobs"
+    """Report full details about specified jobs."""
     queuedJobs: dict[Path, dict] = {}
     queuedJobs.update(
         [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
@@ -401,24 +401,24 @@ def fullDetails(jobList: list[str]):
     if not queuedJobs and options.verbose >= 2:
         print("No jobs queued")
     if not jobList:
-        jobList = [qFileInfo["jobId"] for qFileInfo in queuedJobs.values()]
+        jobList = [jobInfo["jobId"] for jobInfo in queuedJobs.values()]
 
     jobOptions = options
     while len(jobList) > 0:
         hits = 0
-        for qFilePath, qFileInfo in queuedJobs.items():
-            if not qFileInfo:
+        for qFilePath, jobInfo in queuedJobs.items():
+            if not jobInfo:
                 continue
-            if jobList[0] == qFileInfo["jobId"] or jobOptions.name == qFileInfo["name"]:
+            if jobList[0] == jobInfo["jobId"] or jobOptions.name == jobInfo["name"]:
                 print("")
-                for key, value in qFileInfo.items():
+                for key, value in jobInfo.items():
                     if "status" == key:
                         continue  # Will be included with full history
                     if isinstance(value, list):
                         print(key.upper(), *value, sep="\n")
                     elif value:
                         print("{:10} {}".format(key.upper(), value))
-                qFileInfo.clear()  # Prevent repeated matches
+                jobInfo.clear()  # Prevent repeated matches
                 hits += 1
         if hits == 0 and options.verbose >= 1:
             print(jobList[0], "is not queued", file=sys.stderr)
@@ -427,7 +427,7 @@ def fullDetails(jobList: list[str]):
 
 
 def dequeueJobs(jobList: list[str]):
-    "Remove a list of jobIds or job names from the queue"
+    """Remove a list of jobIds or job names from the queue."""
     if not jobList:
         sys.exit("ERROR: No jobs specified to dequeue")
     queuedJobs: dict[Path, dict] = {}
@@ -437,19 +437,19 @@ def dequeueJobs(jobList: list[str]):
 
     jobOptions = options
     while len(jobList) > 0:
-        for qFilePath, qFileInfo in queuedJobs.items():
-            qJobId = qFileInfo.get("jobId", "")
-            if jobList[0] == qJobId or jobOptions.name == qFileInfo.get("name"):
+        for qFilePath, jobInfo in queuedJobs.items():
+            qJobId = jobInfo.get("jobId", "")
+            if jobList[0] == qJobId or jobOptions.name == jobInfo.get("name"):
                 # Matched either jobId or job name
                 if options.verbose >= 3:
-                    print("Dequeing", options.info.format(**qFileInfo))
+                    print("Dequeing", options.info.format(**jobInfo))
                 if os.name == "posix":
                     # This signal takes immediate effect on Linux
                     os.kill(int(qJobId), signal.SIGTERM)
                 else:
                     # This should work on any OS but the effect is delayed by options.interval
                     qFilePath.unlink(missing_ok=True)
-                qFileInfo.clear()  # Prevent repeated matches
+                jobInfo.clear()  # Prevent repeated matches
                 break
         else:  # Failed to find job
             if options.verbose >= 1:

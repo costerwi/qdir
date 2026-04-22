@@ -1,6 +1,8 @@
 """Abaqus Queue class to create a job script and submit it to qdir
 
-This file may be included by adding the following to custom_v6.env:
+This module is compatible with at least Abaqus 2019 thru 2026
+
+This module may be installed by adding the following to custom_v6.env:
 
 import sys
 sys.path.append(r"C:/path/to/here")  # specify directory of qdirQueue.py
@@ -12,12 +14,12 @@ del sys
 Carl Osterwisch, January 2024
 """
 
-from __future__ import print_function, with_statement
+from __future__ import print_function, with_statement  # use Python3 syntax
 from driverQueues import Queue
 
 
 class QDirQueue(Queue):
-    """Submits jobs to a qdir queue."""
+    """Creates a job script and submits it to a qdir queue."""
 
     def __init__(self):
         import os
@@ -89,7 +91,7 @@ class QDirQueue(Queue):
 
 
     def createJobScript(self, options, env):
-        "Create script to run Abaqus job"
+        """Create script to run Abaqus job"""
 
         import os
 
@@ -116,9 +118,8 @@ class QDirQueue(Queue):
             pass
         return scriptName
 
-
     def submit(self, options, env):
-        "Create Abaqus job script and submit it to qdir"
+        """Create Abaqus job script and submit it to qdir"""
 
         cmd = 'qdir "{}"'.format(self.createJobScript(options, env))
         localenv = env.copy()
