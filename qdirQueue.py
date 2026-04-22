@@ -15,50 +15,28 @@ Carl Osterwisch, January 2024
 """
 
 from __future__ import print_function, with_statement  # use Python3 syntax
+
+__all__ = ["QDirQueue"]
+
+import os
+from string import Template
+from textwrap import dedent
+
 from driverQueues import Queue
+import uti
 
 
 class QDirQueue(Queue):
     """Creates a job script and submits it to a qdir queue."""
 
     def __init__(self):
-        import os
-        from textwrap import dedent
-        from string import Template
-
-        if hasattr(Queue, '__init__'):
+        if hasattr(Queue, "__init__"):
             Queue.__init__(self)
-        if os.name == "posix":
-            self.extension = ".sh"  # job script filename extension
-            self.setenv = "export"  # command to set environment variables
-            self.template = Template(
-                dedent(
-                    """\
-                #!/bin/sh
-                #QDIR --name "$job"
-                #QDIR --output "{name}.log"
-                JOB="$job"
-                ABAQUS="$abaqus"
-                $exports
-                cd "$$(dirname "$$0")"
-
-                let t=0
-                while [[ -e "$$JOB.lck" && $$t != 90 ]]
-                do
-                    let t+=5
-                    echo Paused $$t seconds for $$JOB.lck to clear
-                    sleep 5
-                done
-
-                umask 0007
-                exec "$$ABAQUS" python -u "$$JOB.com"
-                """
-                )
-            )
-        else:
+        if uti.getPlatform() == "win86_64":
+            # Windows OS
             self.extension = ".cmd"  # job script filename extension
             self.setenv = "set"  # command to set environment variables
-            self.template = Template(
+            self.template = Template(  # job script template
                 dedent(
                     """\
                 @echo off
@@ -83,25 +61,54 @@ class QDirQueue(Queue):
                 )
             )
 
+        else:
+            # Non-Windows OS
+            self.extension = ".sh"  # job script filename extension
+            self.setenv = "export"  # command to set environment variables
+            self.template = Template(  # job script template
+                dedent(
+                    """\
+                #!/bin/sh
+                #QDIR --name "$job"
+                #QDIR --output "{name}.log"
+                JOB="$job"
+                ABAQUS="$abaqus"
+                $exports
+                cd "$$(dirname "$$0")"
+
+                let t=0
+                while [[ -e "$$JOB.lck" && $$t != 90 ]]
+                do
+                    let t+=5
+                    echo Paused $$t seconds for $$JOB.lck to clear
+                    sleep 5
+                done
+
+                umask 0007
+                exec "$$ABAQUS" python -u "$$JOB.com"
+                """
+                )
+            )
 
     def exports(self, options, env):
-        "Override to return a dict of os.environ settings to be inserted into the command script"
+        """Return a dict of os.environ settings to be inserted into the command script"""
 
-        return {"ABQ_DLALLOCATOR": "1"} # required by Abaqus 2026 Golden BR10000415659
-
+        extraEnviron = {}
+        if uti.getProductVersion() == "Abaqus 2026":
+            extraEnviron["ABQ_DLALLOCATOR"] = "1"  # BR10000415659
+        return extraEnviron
 
     def createJobScript(self, options, env):
         """Create script to run Abaqus job"""
-
-        import os
 
         job = options["job"]
         scriptName = os.path.join(".", job + self.extension)
         exports = self.exports(options, env) or ""
         if isinstance(exports, dict):
             # expand dict of os.environ settings to multiline str
-            exports = "\n".join(self.setenv + " {0}={1}".format(*i)
-                    for i in sorted(exports.items()))
+            exports = "\n".join(
+                self.setenv + " {0}={1}".format(*i) for i in sorted(exports.items())
+            )
 
         with open(scriptName, "w") as jobFile:
             print(
