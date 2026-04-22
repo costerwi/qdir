@@ -75,6 +75,14 @@ parser.add_argument(
     "Default is environment variable QDIR_LOGNAME or {!r}".format(default),
     default=default,
 )
+default = os.environ.get("QDIR_STATUS", "{jobId} {name} {status} after {duration}")
+parser.add_argument(
+    "-s",
+    "--status",
+    help="Specify the format of job status messages output to terminal. "
+    "Default is environment variable QDIR_STATUS or {!r}".format(default),
+    default=default,
+)
 default = os.environ.get("QDIR_VERBOSE", "2")
 parser.add_argument(
     "-v",
@@ -257,6 +265,7 @@ def parseArguments(argv: list[str]) -> Namespace:
 
 def enqueue(cmd: list[str]):
     """Submit cmd to the job queue."""
+    import getpass
     import shutil
 
     if options.verbose >= 1 and not shutil.which(cmd[0]):
@@ -268,16 +277,45 @@ def enqueue(cmd: list[str]):
             os._exit(0)
 
     previousJobs = getQueuedJobs()
-    jobId = str(os.getpid())  # process id of this script
+    jobInfo = {  # information about this job
+        "jobId": str(os.getpid()),  # process id of this script
+        "owner": getpass.getuser(),
+        "name": options.name,
+        "command": " ".join(cmd),
+        "directory": Path.cwd(),
+        "behind": " ".join([job.stem for job in previousJobs]),
+        "status": "",
+    }
     job = None  # subprocess running the cmd, if any
-    qFilePath = (options.queue / jobId).with_suffix(qFileSuffix)
-    startTime = perf_counter()  # time job was enqueued
+
+    def updateStatus(priority, status, file=None):
+        """Notify user of status change and optionally record in file"""
+        jobInfo["status"] = status
+        jobInfo["time"] = asctime()
+        jobInfo["duration"] = humanDuration(perf_counter() - startTime)
+        if options.verbose >= priority:
+            # Echo status to the terminal
+            print(options.status.format(**jobInfo))
+        if file is not None:
+            # Record status history in specified qFile
+            print("{time} {status}".format(**jobInfo), file=file)
+
+    # Create the qFile in qdir directory based on this jobId
+    qFilePath = (options.queue / jobInfo["jobId"]).with_suffix(qFileSuffix)
+    with qFilePath.open("w") as qFile:
+        os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
+        # Initialize qFile contents for qstat information
+        for key in "name", "command", "directory", "behind":
+            value = jobInfo.get(key)
+            if value:
+                print(key, value, sep="\t", file=qFile)
+        startTime = perf_counter()  # time job was enqueued
+        updateStatus(priority=2, status="Queued", file=qFile)
 
     def terminateJob(sig=None, frame=None):
         """Terminate this job if running or dequeue if not"""
         nonlocal job
         result = ""
-        runTime = "after " + humanDuration(perf_counter() - startTime)
         qFilePath.unlink(missing_ok=True)  # remove its qFile
         if hasattr(job, "pid"):  # job is or was running
             if job.poll() is None:
@@ -295,38 +333,17 @@ def enqueue(cmd: list[str]):
                     result = "** Done"
                 else:
                     result = "-- Error"
-        elif job is None and options.verbose >= 2:
+        elif job is None:
             # removed from the queue before starting
             result = ".. Dequeued"
         if result:
-            print(jobId, options.name, result, runTime, file=sys.stderr)
-            job = result  # don't report result again
+            updateStatus(priority=2, status=result)
+            job = result  # prevent this from duplicate reporting
 
     if os.name == "nt":
         signal.signal(signal.SIGBREAK, terminateJob)  # catch CTRL_BREAK_EVENT
     else:
         signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
-
-    # Create the qFile in qdir directory with its name matching this jobId
-    with qFilePath.open("w") as qFile:
-        os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
-        if options.verbose >= 2:
-            print("Queued", jobId, options.name)
-        os.close(sys.stdout.fileno())  # empty stdout buffer
-        sys.stdout = open(os.devnull, "w")  # block further printing to stdout
-
-        # qFile contents for qstat information
-        print("name", options.name, sep="\t", file=qFile)
-        print("command", " ".join(cmd), sep="\t", file=qFile)
-        print("directory", Path.cwd(), sep="\t", file=qFile)
-        if previousJobs:
-            print(
-                "behind",
-                " ".join([job.stem for job in previousJobs]),
-                sep="\t",
-                file=qFile,
-            )
-        print(asctime(), "Queued", file=qFile)
 
     # Wait for all previousJobs to complete
     previousJobs.reverse()  # check newest jobs first
@@ -344,14 +361,12 @@ def enqueue(cmd: list[str]):
                     humanDuration(perf_counter() - startTime),
                     file=qFile,
                 )
-                print(asctime(), "Started", file=qFile)
+                updateStatus(priority=3, status="Started", file=qFile)
             # Keep mtime unchanged so the job files sort correctly
             os.utime(qFilePath, (stat.st_atime, stat.st_mtime))
         except Exception:
             pass  # ignore any status update exceptions
-        name = options.name
-        owner = os.getlogin()
-        logFilePath = Path(options.output.format(**locals()))
+        logFilePath = Path(options.output.format(**jobInfo))
         with logFilePath.open("w") as logFile:
             opts = {}
             if os.name == "nt":
