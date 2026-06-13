@@ -127,9 +127,12 @@ class QDirQueue(Queue):
 
     def submit(self, options, env):
         """Create Abaqus job script and submit it to qdir"""
-
-        cmd = 'qdir "{}"'.format(self.createJobScript(options, env))
+        dirname = os.path.dirname(__file__)
+        qdir = os.path.join(dirname, 'qdir')  # full path to qdir
+        scriptName = self.createJobScript(options, env)
+        cmd = '{} {!r}'.format(qdir, scriptName)
         localenv = env.copy()
         if "PYTHONPATH" in localenv:
             del localenv["PYTHONPATH"]  # avoid version conflicts
         return self.spawn(cmd, localenv, options.get("verbose", 0))
+
