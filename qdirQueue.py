@@ -52,9 +52,9 @@ def initCAE(qName):
     """Add queue name to list of selectable Abaqus CAE Job queues"""
     try:
         from abaqus import session, addImportCallback
-        print('Adding {} to CAE Job queue options'.format(qName))
         def addQueue(*args):
-            session.Queue(name=qName, queueName=qName)
+            if qName not in session.queues:
+                session.Queue(name=qName, queueName=qName)
         addImportCallback('job', addQueue)
     except ImportError:
         pass  # not running within CAE
