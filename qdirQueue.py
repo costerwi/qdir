@@ -66,6 +66,9 @@ class QDirQueue(Queue):
         if hasattr(Queue, "__init__"):
             Queue.__init__(self)
         self.name = "qdir"
+        dirname = os.path.dirname(os.path.normpath(__file__))
+        path = os.environ.get('PATH', '')
+        os.environ['PATH'] = os.pathsep.join([path, dirname])
         if uti.getPlatform().startswith("win"):
             # Windows OS
             self.extension = ".cmd"  # job script filename extension
@@ -159,10 +162,8 @@ class QDirQueue(Queue):
 
     def submit(self, options, env):
         """Create Abaqus job script and submit it to qdir"""
-        dirname = os.path.dirname(__file__)
-        qdir = os.path.join(dirname, 'qdir')  # full path to qdir
         scriptName = self.createJobScript(options, env)
-        cmd = '{} {!r}'.format(qdir, scriptName)
+        cmd = 'qdir {!r}'.format(scriptName)
         localenv = env.copy()
         if "PYTHONPATH" in localenv:
             del localenv["PYTHONPATH"]  # avoid version conflicts
