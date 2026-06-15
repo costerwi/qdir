@@ -1,2 +1,3 @@
-#!/bin/sh
-exec qdir -d "$@"
+#!/bin/bash
+DIRNAME=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+exec "$DIRNAME/qdir" -d "$@"
