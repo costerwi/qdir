@@ -377,6 +377,7 @@ def enqueue(cmd: list[str]):
                     cmd,
                     shell=False,
                     start_new_session=True,
+                    stdin=subprocess.DEVNULL,
                     stdout=logFile,
                     stderr=subprocess.STDOUT,
                     **opts,
