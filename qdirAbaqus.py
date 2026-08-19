@@ -8,8 +8,8 @@ Installation:
 Add the following lines to your Abaqus custom_v6.env file:
 
 import sys
-sys.path.append(r"C:/path/to/here/")  # specify directory of qdirQueue.py
-import qdirQueue
+sys.path.append(r"C:/path/to/here/")  # specify directory of qdirAbaqus.py
+import qdirAbaqus
 qdirQueue.init(queues)
 run_mode = BATCH
 
@@ -163,7 +163,7 @@ class QDirQueue(Queue):
     def submit(self, options, env):
         """Create Abaqus job script and submit it to qdir"""
         scriptName = self.createJobScript(options, env)
-        cmd = 'qdir {!r}'.format(scriptName)
+        cmd = 'qsub {!r}'.format(scriptName)
         localenv = env.copy()
         if "PYTHONPATH" in localenv:
             del localenv["PYTHONPATH"]  # avoid version conflicts
