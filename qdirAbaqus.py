@@ -8,19 +8,18 @@ Installation:
 Add the following lines to your Abaqus custom_v6.env file:
 
 import sys
-sys.path.append(r"C:/path/to/here/")  # specify directory of qdirAbaqus.py
+sys.path.append(r"C:/path/to/here/")  # directory of qdirAbaqus.py
 import qdirAbaqus
-qdirQueue.init(queues)
+qdirAbaqus.init(queues)
 run_mode = BATCH
 
 Usage:
 
 Abaqus jobs from the command line will submit to the queue by default.
 
-abaqus job=whatever
+    abaqus job=whatever
 
 Abaqus CAE may submit to the queue by selecting it in the Job dialog.
-
 
 Carl Osterwisch, January 2024
 """
@@ -47,18 +46,17 @@ def init(queues, queue=None):
     initCAE(qName)  # also add to CAE
     return qName
 
-
 def initCAE(qName):
-    """Add queue name to list of selectable Abaqus CAE Job queues"""
+    """Register callback to add qName to Abaqus CAE Job queues"""
     try:
         from abaqus import session, addImportCallback
-        def addQueue(*args):
-            if qName not in session.queues:
-                session.Queue(name=qName, queueName=qName)
-        addImportCallback('job', addQueue)
     except ImportError:
-        pass  # not running within CAE
-
+        return  # not running within CAE
+    def addQueue(*args):
+        """Add qName to list of selectable Abaqus CAE Job queues"""
+        if qName not in session.queues:
+            session.Queue(name=qName, queueName=qName)
+    addImportCallback('job', addQueue)
 
 class QDirQueue(Queue):
     """Creates a job script and submits it to a qdir queue."""
@@ -72,7 +70,7 @@ class QDirQueue(Queue):
         if uti.getPlatform().startswith("win"):
             # Windows OS
             self.extension = ".cmd"  # job script filename extension
-            self.setenv = "set"  # command to set environment variables
+            self.setenv = "set"  # shell command to set environment variables
             self.template = Template(  # job script template
                 dedent(
                     """\
@@ -101,7 +99,7 @@ class QDirQueue(Queue):
         else:
             # Non-Windows OS
             self.extension = ".sh"  # job script filename extension
-            self.setenv = "export"  # command to set environment variables
+            self.setenv = "export"  # shell command to set environment variables
             self.template = Template(  # job script template
                 dedent(
                     """\
@@ -135,7 +133,7 @@ class QDirQueue(Queue):
         return extraEnviron
 
     def createJobScript(self, options, env):
-        """Create script to run Abaqus job"""
+        """Create shell script to run Abaqus job"""
         job = options["job"]
         scriptName = os.path.join(".", job + self.extension)
         exports = self.exports(options, env) or ""
