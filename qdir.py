@@ -10,7 +10,7 @@ A shared queue directory should be specified on a multi-user system.
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.16.0"
+__version__ = "0.17.0"
 
 from argparse import ArgumentParser, Namespace
 import os
@@ -20,6 +20,8 @@ import subprocess
 import sys
 from tempfile import gettempdir
 from time import sleep, asctime, perf_counter
+
+default = Namespace
 
 parser = ArgumentParser(description=__doc__, epilog="Version " + __version__)
 parser.add_argument(
@@ -36,62 +38,68 @@ parser.add_argument(
     help="Report full detailed information about the job names or jobIds listed in args. "
     "All jobs are reported if none are specified.",
 )
+default.name = os.environ.get("PBS_JOBNAME")
 parser.add_argument(
     "-N",
     "--name",
     help="Name for the job. Default is args[0]",
-    default=os.environ.get("PBS_JOBNAME"),
+    default=default.name,
 )
-default = os.environ.get("QDIR_QUEUE", gettempdir())
+default.queue = Path(os.environ.get("QDIR_QUEUE", gettempdir()))
 parser.add_argument(
     "-q",
     "--queue",
     type=Path,
     help="Directory to store the queue files. "
-    "Default is environment variable QDIR_QUEUE or {}".format(default),
-    default=default,
+    "Default is environment variable QDIR_QUEUE or {}".format(default.queue),
+    default=default.queue,
 )
-default = os.environ.get("QDIR_POLL_INTERVAL", "10")
+try:
+    default.interval = max(1, int(os.environ.get("QDIR_POLL_INTERVAL", 5)))
+except ValueError:
+    default.interval = 5
 parser.add_argument(
     "-c",
     "--interval",
     type=int,
     help="Polling interval in seconds. "
-    "Default is environment variable QDIR_POLL_INTERVAL or {}".format(default),
-    default=default,
+    "Default is environment variable QDIR_POLL_INTERVAL or {}".format(default.interval),
+    default=default.interval,
 )
-default = os.environ.get("QDIR_INFO", "{jobId:8} {owner:12} {status:35} {name}")
+default.info = os.environ.get("QDIR_INFO", "{jobId:8} {owner:12} {status:35} {name}")
 parser.add_argument(
     "-i",
     "--info",
     help="Specify the format of information about jobs in queue. "
-    "Default is environment variable QDIR_INFO or {!r}".format(default),
-    default=default,
+    "Default is environment variable QDIR_INFO or {!r}".format(default.info),
+    default=default.info,
 )
-default = os.environ.get("QDIR_LOGNAME", "{name}._{jobId}")
+default.output = os.environ.get("QDIR_LOGNAME", "{name}._{jobId}")
 parser.add_argument(
     "-o",
     "--output",
     help="File name for combined stdout and stderr. "
-    "Default is environment variable QDIR_LOGNAME or {!r}".format(default),
-    default=default,
+    "Default is environment variable QDIR_LOGNAME or {!r}".format(default.output),
+    default=default.output,
 )
-default = os.environ.get("QDIR_STATUS", "{jobId} {name} {status} after {duration}")
+default.status = os.environ.get(
+    "QDIR_STATUS", "{jobId} {name} {status} after {duration}"
+)
 parser.add_argument(
     "-s",
     "--status",
     help="Specify the format of job status messages output to terminal. "
-    "Default is environment variable QDIR_STATUS or {!r}".format(default),
-    default=default,
+    "Default is environment variable QDIR_STATUS or {!r}".format(default.status),
+    default=default.status,
 )
-default = os.environ.get("QDIR_VERBOSE", "2")
+default.verbose = int(os.environ.get("QDIR_VERBOSE", 2))
 parser.add_argument(
     "-v",
     "--verbose",
     type=int,
     help="Verbosity level. "
-    "Default is environment variable QDIR_VERBOSE or {}".format(default),
-    default=default,
+    "Default is environment variable QDIR_VERBOSE or {}".format(default.verbose),
+    default=default.verbose,
 )
 parser.add_argument(
     "args",
@@ -133,8 +141,198 @@ if os.name == "nt":
         Path.owner = winOwner  # monkey patch if needed
 
 
+class Queue:
+    def __init__(self, **kwargs):
+        """Create the queue, allowing parameters to override defaults"""
+        for parameter, value in vars(default).items():
+            setattr(self, parameter, kwargs.pop(parameter, value))
+
+    def getQueuedJobs(self) -> list[Path]:
+        """Return a list of qFilePath for currently queued jobs, sorted oldest to newest."""
+        # Collecct a set of active process ids
+        if os.name == "nt":
+            import win32process
+
+            processIds = {str(pid) for pid in win32process.EnumProcesses()}
+        else:
+            procPath = Path("/proc")
+            processIds = {p.stem for p in procPath.iterdir() if p.stem.isnumeric()}
+
+        def is_qFile(path):
+            """Verify the path is an active job file with a matching process id"""
+            if not path.stem.isnumeric():
+                return False  # file name must be an integer
+            if not (path.is_file()):
+                return False  # path must represent a file
+            if path.stem in processIds:
+                return True  # file name must match a running process number
+
+            # Otherwise, the process may have died or the computer was rebooted with
+            # this job in the queue. This orphaned qFile may be removed.
+            print(
+                "Removing orphaned queue file",
+                options.info.format(**getJobInfo(path)),
+                file=sys.stderr,
+            )
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as e:
+                print(e, file=sys.stderr)
+
+        queuedJobs = [
+            filePath
+            for filePath in self.queue.glob("*" + qFileSuffix)
+            if is_qFile(filePath)
+        ]
+        return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
+
+    def dequeue(self, qFilePath: Path):
+        """Remove a job from the queue"""
+        assert qFilePath.parent == self.queue
+        assert qFilePath.suffix == qFileSuffix
+        assert qFilePath.stem.isnumeric()
+        # Removing qFile will dequeue the job but the effect is delayed by polling interval
+        qFilePath.unlink(missing_ok=True)
+        if os.name == "posix":
+            # On Linux the SIGTERM signal has immediate effect
+            try:
+                os.kill(int(qFilePath.stem), signal.SIGTERM)
+            except OSError:  # no such process
+                pass
+
+    def enqueue(self, cmd: list[str], name=""):
+        """Wait in queue until prior jobs finish, then run cmd"""
+        import getpass
+        import shutil
+
+        if self.verbose >= 1 and not shutil.which(cmd[0]):
+            print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
+
+        if os.name == "posix":
+            # fork to background
+            if os.fork():
+                os._exit(0)
+
+        previousJobs = self.getQueuedJobs()
+        jobInfo = {  # information about this job
+            "jobId": str(os.getpid()),  # process id of this script
+            "owner": getpass.getuser(),
+            "name": name or cmd[0],
+            "command": " ".join(cmd),
+            "directory": Path.cwd(),
+            "behind": " ".join([job.stem for job in previousJobs]),
+            "status": "",
+        }
+        job = None  # subprocess running the cmd, if any
+
+        def updateStatus(priority, status, file=None):
+            """Notify user of status change and optionally record in file"""
+            jobInfo["status"] = status
+            jobInfo["time"] = asctime()
+            jobInfo["duration"] = humanDuration(perf_counter() - startTime)
+            if self.verbose >= priority:
+                # Echo status to the terminal
+                print(options.status.format(**jobInfo))
+            if file is not None:
+                # Record status history in specified qFile
+                print("{time} {status}".format(**jobInfo), file=file)
+
+        # Create the qFile in qdir directory based on this jobId
+        qFilePath = (self.queue / jobInfo["jobId"]).with_suffix(qFileSuffix)
+        with qFilePath.open("w") as qFile:
+            os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
+            # Initialize qFile contents for qstat information
+            for key in "name", "command", "directory", "behind":
+                value = jobInfo.get(key)
+                if value:
+                    print(key, value, sep="\t", file=qFile)
+            startTime = perf_counter()  # time job was enqueued
+            updateStatus(priority=2, status="Queued", file=qFile)
+
+        def terminateJob(sig=None, frame=None):
+            """Terminate this job if running or dequeue if not"""
+            nonlocal job
+            result = ""
+            qFilePath.unlink(missing_ok=True)  # remove its qFile
+            if job is None:
+                # removed from the queue before starting
+                result = ".. Dequeued"
+            elif hasattr(job, "pid"):  # job is or was running
+                if job.poll() is None:
+                    # job is still running
+                    if self.verbose >= 2:
+                        result = ".. Killed"
+                    if os.name == "nt":
+                        job.send_signal(signal.CTRL_BREAK_EVENT)
+                    else:
+                        # pass SIGTERM signal to all child processes in this process group
+                        os.killpg(os.getpgid(job.pid), signal.SIGTERM)
+                elif self.verbose >= 1:
+                    # job is no longer running; check returncode
+                    if job.returncode <= 0:
+                        result = "** Done"
+                    else:
+                        result = "-- Error"
+            if result:
+                updateStatus(priority=2, status=result)
+                job = result  # prevent this from duplicate reporting
+
+        signal.signal(
+            signal.SIGTERM, terminateJob
+        )  # catch termination signal (ignored on Windows)
+
+        # Wait for all previousJobs to complete
+        previousJobs.reverse()  # check newest jobs first
+        while qFilePath.exists() and any(
+            otherFile.exists() for otherFile in previousJobs
+        ):
+            sleep(self.interval)
+
+        # Launch the cmd only if this job's qFile still exists
+        if qFilePath.exists():
+            try:
+                # Append the job starting status to qFile
+                stat = qFilePath.stat()
+                with qFilePath.open("a") as qFile:
+                    print(
+                        "Waited in queue",
+                        humanDuration(perf_counter() - startTime),
+                        file=qFile,
+                    )
+                    updateStatus(priority=3, status="Started", file=qFile)
+                # Keep mtime unchanged so the job files sort correctly
+                os.utime(qFilePath, (stat.st_atime, stat.st_mtime))
+            except Exception:
+                pass  # ignore any status update exceptions
+            logFilePath = Path(options.output.format(**jobInfo))
+            with logFilePath.open("w") as logFile:
+                opts = {}
+                if os.name == "nt":
+                    opts["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+                try:
+                    job = subprocess.Popen(
+                        cmd,
+                        shell=False,
+                        start_new_session=True,
+                        stdin=subprocess.DEVNULL,
+                        stdout=logFile,
+                        stderr=subprocess.STDOUT,
+                        **opts,
+                    )
+                    startTime = perf_counter()  # reset to time job started running
+                    while qFilePath.exists() and job.poll() is None:
+                        # job is still running
+                        sleep(self.interval)
+                except Exception as e:
+                    print(e, file=logFile)
+
+        terminateJob()  # Clean up at the end
+
+
 def getJobInfo(qFilePath: Path) -> dict:
     """Return information about the job specified in qFilePath"""
+    assert qFilePath.suffix == qFileSuffix
+    assert qFilePath.stem.isnumeric()
     jobInfo = {
         "jobId": qFilePath.stem,
         "owner": qFilePath.owner(),
@@ -162,51 +360,6 @@ def getJobInfo(qFilePath: Path) -> dict:
         if options.verbose >= 3:
             print(e, file=sys.stderr)
     return jobInfo
-
-
-def getQueuedJobs() -> list[Path]:
-    """Return a list of qFilePath for currently queued jobs, sorted oldest to newest."""
-
-    # Collecct a set of active process ids
-    if os.name == "nt":
-        import win32process
-
-        processIds = set(str(pid) for pid in win32process.EnumProcesses())
-    else:
-        cmd = ["pgrep", "python"]
-        processIds = {
-            pid
-            for pid in subprocess.check_output(cmd, universal_newlines=True).split()
-            if pid.isnumeric()
-        }
-
-    def is_qFile(path):
-        """Verify the path is an active job file with a matching process id"""
-        if not path.stem.isnumeric():
-            return False  # file name must be an integer
-        if not (path.is_file()):
-            return False  # path must represent a file
-        if path.stem in processIds:
-            return True  # file name must match a running process number
-
-        # Otherwise, the process may have died or the computer was rebooted with
-        # this job in the queue. This orphaned queue may be removed.
-        print(
-            "Removing orphaned queue file",
-            options.info.format(**getJobInfo(path)),
-            file=sys.stderr,
-        )
-        try:
-            path.unlink(missing_ok=True)
-        except OSError as e:
-            print(e, file=sys.stderr)
-
-    queuedJobs = [
-        filePath
-        for filePath in options.queue.glob("*" + qFileSuffix)
-        if is_qFile(filePath)
-    ]
-    return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
 
 
 def parseArguments(argv: list[str]) -> Namespace:
@@ -264,139 +417,11 @@ def parseArguments(argv: list[str]) -> Namespace:
     return options
 
 
-def enqueue(cmd: list[str]):
-    """Submit cmd to the job queue."""
-    import getpass
-    import shutil
-
-    if options.verbose >= 1 and not shutil.which(cmd[0]):
-        print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
-
-    if os.name == "posix":
-        # fork to background
-        if os.fork():
-            os._exit(0)
-
-    previousJobs = getQueuedJobs()
-    jobInfo = {  # information about this job
-        "jobId": str(os.getpid()),  # process id of this script
-        "owner": getpass.getuser(),
-        "name": options.name,
-        "command": " ".join(cmd),
-        "directory": Path.cwd(),
-        "behind": " ".join([job.stem for job in previousJobs]),
-        "status": "",
-    }
-    job = None  # subprocess running the cmd, if any
-
-    def updateStatus(priority, status, file=None):
-        """Notify user of status change and optionally record in file"""
-        jobInfo["status"] = status
-        jobInfo["time"] = asctime()
-        jobInfo["duration"] = humanDuration(perf_counter() - startTime)
-        if options.verbose >= priority:
-            # Echo status to the terminal
-            print(options.status.format(**jobInfo))
-        if file is not None:
-            # Record status history in specified qFile
-            print("{time} {status}".format(**jobInfo), file=file)
-
-    # Create the qFile in qdir directory based on this jobId
-    qFilePath = (options.queue / jobInfo["jobId"]).with_suffix(qFileSuffix)
-    with qFilePath.open("w") as qFile:
-        os.environ["QDIR_FILE"] = qFile.name  # will be exported to cmd
-        # Initialize qFile contents for qstat information
-        for key in "name", "command", "directory", "behind":
-            value = jobInfo.get(key)
-            if value:
-                print(key, value, sep="\t", file=qFile)
-        startTime = perf_counter()  # time job was enqueued
-        updateStatus(priority=2, status="Queued", file=qFile)
-
-    def terminateJob(sig=None, frame=None):
-        """Terminate this job if running or dequeue if not"""
-        nonlocal job
-        result = ""
-        qFilePath.unlink(missing_ok=True)  # remove its qFile
-        if hasattr(job, "pid"):  # job is or was running
-            if job.poll() is None:
-                # job is still running
-                if options.verbose >= 2:
-                    result = ".. Killed"
-                if os.name == "nt":
-                    job.send_signal(signal.CTRL_BREAK_EVENT)
-                else:
-                    # pass SIGTERM signal to all child processes in this process group
-                    os.killpg(os.getpgid(job.pid), signal.SIGTERM)
-            elif options.verbose >= 1:
-                # job is no longer running; check returncode
-                if job.returncode <= 0:
-                    result = "** Done"
-                else:
-                    result = "-- Error"
-        elif job is None:
-            # removed from the queue before starting
-            result = ".. Dequeued"
-        if result:
-            updateStatus(priority=2, status=result)
-            job = result  # prevent this from duplicate reporting
-
-    if os.name == "nt":
-        signal.signal(signal.SIGBREAK, terminateJob)  # catch CTRL_BREAK_EVENT
-    else:
-        signal.signal(signal.SIGTERM, terminateJob)  # catch termination signal
-
-    # Wait for all previousJobs to complete
-    previousJobs.reverse()  # check newest jobs first
-    while qFilePath.exists() and any(otherFile.exists() for otherFile in previousJobs):
-        sleep(options.interval)
-
-    # Launch the cmd only if this job's qFile still exists
-    if qFilePath.exists():
-        try:
-            # Append the job starting status to qFile
-            stat = qFilePath.stat()
-            with qFilePath.open("a") as qFile:
-                print(
-                    "Waited in queue",
-                    humanDuration(perf_counter() - startTime),
-                    file=qFile,
-                )
-                updateStatus(priority=3, status="Started", file=qFile)
-            # Keep mtime unchanged so the job files sort correctly
-            os.utime(qFilePath, (stat.st_atime, stat.st_mtime))
-        except Exception:
-            pass  # ignore any status update exceptions
-        logFilePath = Path(options.output.format(**jobInfo))
-        with logFilePath.open("w") as logFile:
-            opts = {}
-            if os.name == "nt":
-                opts["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-            try:
-                job = subprocess.Popen(
-                    cmd,
-                    shell=False,
-                    start_new_session=True,
-                    stdin=subprocess.DEVNULL,
-                    stdout=logFile,
-                    stderr=subprocess.STDOUT,
-                    **opts,
-                )
-                startTime = perf_counter()  # reset to time job started running
-                while qFilePath.exists() and job.poll() is None:
-                    # job is still running
-                    sleep(options.interval)
-            except Exception as e:
-                print(e, file=logFile)
-
-    terminateJob()  # Clean up at the end
-
-
-def qstat():
+def qstat(queue):
     """Print a list of queued jobs."""
     if options.verbose >= 2:
-        print("Queue directory", options.queue)
-    queuedJobs = getQueuedJobs()
+        print("Queue directory", queue.queue)
+    queuedJobs = queue.getQueuedJobs()
     if not queuedJobs and options.verbose >= 2:
         print("No jobs queued")
     else:
@@ -409,11 +434,11 @@ def qstat():
             print(options.info.format(**jobInfo))
 
 
-def fullDetails(jobList: list[str]):
+def fullDetails(queue, jobList: list[str]):
     """Report full details about specified jobs."""
     queuedJobs: dict[Path, dict] = {}
     queuedJobs.update(
-        [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
+        [(qFilePath, getJobInfo(qFilePath)) for qFilePath in queue.getQueuedJobs()]
     )
     if not queuedJobs and options.verbose >= 2:
         print("No jobs queued")
@@ -443,13 +468,13 @@ def fullDetails(jobList: list[str]):
         jobOptions = parseArguments(jobList)
 
 
-def dequeueJobs(jobList: list[str]):
+def dequeueJobs(queue, jobList: list[str]):
     """Remove a list of jobIds or job names from the queue."""
     if not jobList:
         sys.exit("ERROR: No jobs specified to dequeue")
     queuedJobs: dict[Path, dict] = {}
     queuedJobs.update(
-        [(qFilePath, getJobInfo(qFilePath)) for qFilePath in getQueuedJobs()]
+        [(qFilePath, getJobInfo(qFilePath)) for qFilePath in queue.getQueuedJobs()]
     )
 
     jobOptions = options
@@ -460,12 +485,7 @@ def dequeueJobs(jobList: list[str]):
                 # Matched either jobId or job name
                 if options.verbose >= 3:
                     print("Dequeing", options.info.format(**jobInfo))
-                if os.name == "posix":
-                    # This signal takes immediate effect on Linux
-                    os.kill(int(qJobId), signal.SIGTERM)
-                else:
-                    # This should work on any OS but the effect is delayed by options.interval
-                    qFilePath.unlink(missing_ok=True)
+                queue.dequeue(qFilePath)
                 jobInfo.clear()  # Prevent repeated matches
                 break
         else:  # Failed to find job
@@ -492,16 +512,17 @@ if __name__ == "__main__":
         sys.exit(
             f"The QDIR_POLL_INTERVAL {options.interval} must be seconds greater than 0"
         )
+    queue = Queue(**vars(options))
 
     if options.full:
         # Report detailed information about jobs in the queue
-        fullDetails(options.args)
+        fullDetails(queue, options.args)
     elif options.dequeue:
         # Dequeue these jobId numbers or job names
-        dequeueJobs(options.args)
+        dequeueJobs(queue, options.args)
     elif len(options.args) == 0:
         # No arguments: Report a list of jobs in the queue
-        qstat()
+        qstat(queue)
     else:
         # Enqueue a new command
-        enqueue(options.args)
+        queue.enqueue(options.args)

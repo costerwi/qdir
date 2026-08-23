@@ -40,11 +40,12 @@ def init(queues, queue=None):
     """Add the queue instance, QDirQueue() by default, to dict of solver queues"""
     if queue is None:
         queue = QDirQueue()
-    qName = getattr(queue, 'name', 'qdir')
-    queues[qName] = queue
-    queues.setdefault('default', queue)
+    qName = getattr(queue, "name", "qdir")
+    queues[qName] = queue  # add to solver
+    queues.setdefault("default", queue)
     initCAE(qName)  # also add to CAE
     return qName
+
 
 def initCAE(qName):
     """Register callback to add qName to Abaqus CAE Job queues"""
@@ -52,21 +53,25 @@ def initCAE(qName):
         from abaqus import session, addImportCallback
     except ImportError:
         return  # not running within CAE
+
     def addQueue(*args):
         """Add qName to list of selectable Abaqus CAE Job queues"""
         if qName not in session.queues:
             session.Queue(name=qName, queueName=qName)
-    addImportCallback('job', addQueue)
+
+    addImportCallback("job", addQueue)
+
 
 class QDirQueue(Queue):
     """Creates a job script and submits it to a qdir queue."""
+
     def __init__(self):
         if hasattr(Queue, "__init__"):
             Queue.__init__(self)
         self.name = "qdir"
         dirname = os.path.dirname(os.path.normpath(__file__))
-        path = os.environ.get('PATH', '')
-        os.environ['PATH'] = os.pathsep.join([path, dirname])
+        path = os.environ.get("PATH", "")
+        os.environ["PATH"] = os.pathsep.join([path, dirname])
         if uti.getPlatform().startswith("win"):
             # Windows OS
             self.extension = ".cmd"  # job script filename extension
@@ -161,9 +166,8 @@ class QDirQueue(Queue):
     def submit(self, options, env):
         """Create Abaqus job script and submit it to qdir"""
         scriptName = self.createJobScript(options, env)
-        cmd = 'qsub {!r}'.format(scriptName)
+        cmd = "qsub {!r}".format(scriptName)
         localenv = env.copy()
         if "PYTHONPATH" in localenv:
             del localenv["PYTHONPATH"]  # avoid version conflicts
         return self.spawn(cmd, localenv, options.get("verbose", 0))
-
