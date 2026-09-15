@@ -5,7 +5,7 @@ Carl Osterwisch, August 2026
 
 from __future__ import print_function, with_statement
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 import os
 import sys

@@ -10,7 +10,7 @@ A shared queue directory should be specified on a multi-user system.
 Carl Osterwisch, January 2024
 """
 
-__version__ = "0.17.0"
+__version__ = "1.0.0"
 
 from argparse import ArgumentParser, Namespace
 import os
