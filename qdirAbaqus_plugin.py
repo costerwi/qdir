@@ -71,8 +71,8 @@ class QDirQueueMonitor(AFXDataDialog):
             len(self.headings) - 1
         )  # Expand name as necessary
         self.table.setPopupOptions(AFXTable.POPUP_DELETE_ROW)
-        self.history = FXText(p=sp, opts=TEXT_READONLY | LAYOUT_FILL_Y)
-        self.history.setVisRows(5)
+        self.jobDetails = FXText(p=sp, opts=TEXT_READONLY | LAYOUT_FILL_Y)
+        self.jobDetails.setVisRows(5)
         self.interval = 10
         if qdir is not None:
             self.queue = qdir.Queue()
@@ -88,6 +88,21 @@ class QDirQueueMonitor(AFXDataDialog):
         for qFilePath in queuedJobs:
             jobInfo = qdir.getJobInfo(qFilePath)
             self.jobData[jobInfo["jobId"]] = qFilePath, jobInfo
+
+    def detailedText(self, jobInfo):
+        """Summarize full job status"""
+        h = []
+        for key, value in jobInfo.items():
+            if "status" == key:
+                continue
+            if not value:
+                continue
+            if isinstance(value, list):
+                h.append(key.upper())
+                h.extend(value)
+            else:
+                h.append("{}\t{}".format(key.upper(), value))
+        return "\n".join(h)
 
     def updateTable(self, *args):
         """Update manager with list of currently queued jobs"""
@@ -109,7 +124,7 @@ class QDirQueueMonitor(AFXDataDialog):
                 notify=FALSE,
             )
         if len(self.jobData) > 0:
-            history = ""
+            jobDetails = ""
         else:
             h = []
             if qdir:
@@ -130,6 +145,7 @@ class QDirQueueMonitor(AFXDataDialog):
                         ]
                     )
             else:
+                # qdir failed to import
                 required = "qdir.py", "qdirAbaqus.py"
                 if sys.version_info.major < 3:
                     h.append("This queue monitor requires Abaqus CAE >= 2024")
@@ -141,7 +157,7 @@ class QDirQueueMonitor(AFXDataDialog):
                     )
                 else:
                     h.append("qdir did not load correctly")
-            history = "\n".join(h)
+            jobDetails = "\n".join(h)
 
         for row, (qFilePath, jobInfo) in enumerate(self.jobData.values(), 1):
             for column, heading in enumerate(self.headings):
@@ -151,9 +167,8 @@ class QDirQueueMonitor(AFXDataDialog):
                     valueText=jobInfo.get(heading, ""),
                 )
             if jobInfo["jobId"] == selected:
-                self.table.selectRow(row)
-                history = "\n".join(jobInfo.get("history", ""))
-        self.history.setText(history)
+                jobDetails = self.detailedText(jobInfo)
+        self.jobDetails.setText(jobDetails)
         self.updateTimer = getAFXApp().addTimeout(self.interval, self, self.ID_REFRESH)
 
     def onSelected(self, sender, sel, ptr):
@@ -167,13 +182,14 @@ class QDirQueueMonitor(AFXDataDialog):
 
     def onDelete(self, sender, sel, ptr):
         """Dequeue any jobs no longer in the table"""
-        listedJobIds = {
+        deletedJobIds = {
             self.table.getItemText(row, column=0)
             for row in range(1, self.table.getNumRows())
+            if self.table.isRowSelected(row)
         }
-        self.history.setText("")
+        self.jobDetails.setText("")
         for jobId, (qFilePath, jobInfo) in self.jobData.items():
-            if jobId not in listedJobIds:
+            if jobId in deletedJobIds:
                 # dequeue the deleted job
                 self.queue.dequeue(qFilePath)
 
