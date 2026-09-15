@@ -221,6 +221,6 @@ toolset.registerGuiMenuButton(
     kernelInitString="# QDir Queue Monitor {}".format(__version__),
     author="Carl Osterwisch",
     version=str(__version__),
-    applicableModules=["Job"],
+    #applicableModules=["Job", "Visualization"],
     description="Check status of jobs in the QDir Queue",
 )
