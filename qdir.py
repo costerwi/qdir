@@ -42,7 +42,7 @@ default.name = os.environ.get("PBS_JOBNAME")
 parser.add_argument(
     "-N",
     "--name",
-    help="Name for the job. Default is args[0]",
+    help="Name for the job. Default is args[-1]",
     default=default.name,
 )
 default.queue = Path(os.environ.get("QDIR_QUEUE", gettempdir()))
@@ -217,7 +217,7 @@ class Queue:
         jobInfo = {  # information about this job
             "jobId": str(os.getpid()),  # process id of this script
             "owner": getpass.getuser(),
-            "name": name or cmd[0],
+            "name": name or cmd[-1],
             "command": " ".join(cmd),
             "directory": Path.cwd(),
             "behind": " ".join([job.stem for job in previousJobs]),
@@ -525,4 +525,4 @@ if __name__ == "__main__":
         qstat(queue)
     else:
         # Enqueue a new command
-        queue.enqueue(options.args)
+        queue.enqueue(options.args, name=options.name)
