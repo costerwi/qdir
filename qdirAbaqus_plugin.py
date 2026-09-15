@@ -33,14 +33,6 @@ configExample = dedent(
 ).format(path=installDir)
 
 
-class QueueTable(AFXTable):
-    def deleteRows(self, startRow, numRows=1, notify=FALSE):
-        """Delete rows and also notify the target"""
-        AFXTable.deleteRows(self, startRow, numRows, notify)
-        if notify:
-            self.getTarget().handle(self, MKUINT(self.ID_DELETE_ROWS, SEL_UPDATE), None)
-
-
 class QDirQueueMonitor(AFXDataDialog):
     (ID_TABLE, ID_REFRESH, ID_LAST) = range(
         AFXDataDialog.ID_LAST, AFXDataDialog.ID_LAST + 3
@@ -59,7 +51,7 @@ class QDirQueueMonitor(AFXDataDialog):
         self.jobData = {}
 
         sp = FXSplitter(self, LAYOUT_FILL_X | LAYOUT_FILL_Y | SPLITTER_VERTICAL)
-        self.table = QueueTable(
+        self.table = AFXTable(
             p=sp,
             numVisRows=5,
             numVisColumns=len(self.headings),
@@ -69,10 +61,8 @@ class QDirQueueMonitor(AFXDataDialog):
             sel=self.ID_TABLE,
             opts=AFXTABLE_NORMAL | AFXTABLE_ROW_MODE,
         )
-        FXMAPFUNC(self, SEL_CLICKED, self.ID_TABLE, QDirQueueMonitor.onTableClicked)
-        FXMAPFUNC(
-            self, SEL_UPDATE, AFXTable.ID_DELETE_ROWS, QDirQueueMonitor.onDeleteRows
-        )
+        FXMAPFUNC(self, SEL_SELECTED, self.ID_TABLE, QDirQueueMonitor.onSelected)
+        FXMAPFUNC(self, SEL_DELETED, self.ID_TABLE, QDirQueueMonitor.onDelete)
         self.table.setLeadingRows(numRows=1)
         self.table.setLeadingRowLabels("\t".join([h.title() for h in self.headings]))
         self.table.setColumnWidth(column=0, width=0)  # Hide the jobIds
@@ -166,16 +156,16 @@ class QDirQueueMonitor(AFXDataDialog):
         self.history.setText(history)
         self.updateTimer = getAFXApp().addTimeout(self.interval, self, self.ID_REFRESH)
 
-    def onTableClicked(self, sender, sel, ptr):
-        """Show the job history data for selected job"""
+    def onSelected(self, sender, sel, ptr):
+        """Show the details for selected job"""
         row = sender.getCurrentRow()
         if row > 0:
             selected = self.table.getItemText(row, column=0)
             qFilePath, jobInfo = self.jobData.get(selected, ("", {}))
-            history = "\n".join(jobInfo.get("history", []))
-            self.history.setText(history)
+            jobDetails = self.detailedText(jobInfo)
+            self.jobDetails.setText(jobDetails)
 
-    def onDeleteRows(self, sender, sel, ptr):
+    def onDelete(self, sender, sel, ptr):
         """Dequeue any jobs no longer in the table"""
         listedJobIds = {
             self.table.getItemText(row, column=0)
