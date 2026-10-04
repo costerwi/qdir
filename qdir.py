@@ -116,7 +116,6 @@ dprefix = os.environ.get(
 )  # regular expression prefix used to recognize optional file directives
 
 if os.name == "nt":
-
     def winOwner(self) -> str:
         "Return name of the WindowsPath owner"
         try:
@@ -140,7 +139,6 @@ if os.name == "nt":
     except NotImplementedError:
         Path.owner = winOwner  # monkey patch if needed
 
-
 class Queue:
     def __init__(self, **kwargs):
         """Create the queue, allowing parameters to override defaults"""
@@ -160,7 +158,6 @@ class Queue:
         # Collecct a set of active process ids
         if os.name == "nt":
             import win32process
-
             processIds = {str(pid) for pid in win32process.EnumProcesses()}
         else:
             procPath = Path("/proc")
@@ -208,7 +205,7 @@ class Queue:
             except OSError:  # no such process
                 pass
 
-    def enqueue(self, cmd: list[str], name=""):
+    def enqueue(self, cmd: list[str]):
         """Wait in queue until prior jobs finish, then run cmd"""
         import getpass
         import shutil
@@ -225,7 +222,7 @@ class Queue:
         jobInfo = {  # information about this job
             "jobId": str(os.getpid()),  # process id of this script
             "owner": getpass.getuser(),
-            "name": name or cmd[-1],
+            "name": self.name or cmd[-1],
             "command": " ".join(cmd),
             "directory": Path.cwd(),
             "behind": " ".join([job.stem for job in previousJobs]),
@@ -336,7 +333,6 @@ class Queue:
 
         terminateJob()  # Clean up at the end
 
-
 def getJobInfo(qFilePath: Path) -> dict:
     """Return information about the job specified in qFilePath"""
     assert qFilePath.suffix == qFileSuffix
@@ -368,7 +364,6 @@ def getJobInfo(qFilePath: Path) -> dict:
         if options.verbose >= 3:
             print(e, file=sys.stderr)
     return jobInfo
-
 
 def parseArguments(argv: list[str]) -> Namespace:
     """Parse the given list of arguments
@@ -424,84 +419,63 @@ def parseArguments(argv: list[str]) -> Namespace:
         print("options", options, file=sys.stderr)
     return options
 
-
-def qstat(queue):
-    """Print a list of queued jobs."""
-    if options.verbose >= 2:
+def printStatus(queue, jobList: list[str]):
+    """Print a list of queued jobs"""
+    if queue.verbose >= 2:
         print("Queue directory", queue.queue)
     queuedJobs = queue.getQueuedJobs()
-    if not queuedJobs and options.verbose >= 2:
+    if not queuedJobs and queue.verbose >= 2:
         print("No jobs queued")
-    else:
-        jobHeadings = None
-        for qFilePath in queuedJobs:
-            jobInfo = getJobInfo(qFilePath)
-            if not jobHeadings and options.verbose >= 1:
-                jobHeadings = {k: k.upper() for k in jobInfo}
-                print(options.info.format(**jobHeadings))
-            print(options.info.format(**jobInfo))
+    jobHeadings = None
+    for qFilePath in queuedJobs:
+        jobInfo = getJobInfo(qFilePath)
+        if not jobHeadings and queue.verbose >= 1:
+            jobHeadings = {k: k.upper() for k in jobInfo}
+            print(queue.info.format(**jobHeadings))
+        if len(jobList) == 0 or jobInfo["jobId"] in jobList or jobInfo["name"] in jobList:
+            print(queue.info.format(**jobInfo))
 
-
-def fullDetails(queue, jobList: list[str]):
-    """Report full details about specified jobs."""
-    queuedJobs: dict[Path, dict] = {}
-    queuedJobs.update(
-        [(qFilePath, getJobInfo(qFilePath)) for qFilePath in queue.getQueuedJobs()]
-    )
-    if not queuedJobs and options.verbose >= 2:
+def printDetails(queue, jobList: list[str]):
+    """Report full details about queued jobs"""
+    if queue.verbose >= 2:
+        print("Queue directory", queue.queue)
+    queuedJobs = queue.getQueuedJobs()
+    if not queuedJobs and queue.verbose >= 2:
         print("No jobs queued")
-    if not jobList:
-        jobList = [jobInfo["jobId"] for jobInfo in queuedJobs.values()]
 
-    jobOptions = options
-    while len(jobList) > 0:
-        hits = 0
-        for qFilePath, jobInfo in queuedJobs.items():
-            if not jobInfo:
-                continue
-            if jobList[0] == jobInfo["jobId"] or jobOptions.name == jobInfo["name"]:
-                print("")
-                for key, value in jobInfo.items():
-                    if "status" == key:
-                        continue  # Will be included with full history
-                    if isinstance(value, list):
-                        print(key.upper(), *value, sep="\n")
-                    elif value:
-                        print("{:10} {}".format(key.upper(), value))
-                jobInfo.clear()  # Prevent repeated matches
-                hits += 1
-        if hits == 0 and options.verbose >= 1:
-            print(jobList[0], "is not queued", file=sys.stderr)
-        jobList.pop(0)
-        jobOptions = parseArguments(jobList)
-
+    for qFilePath in queuedJobs:
+        jobInfo = getJobInfo(qFilePath)
+        if len(jobList) == 0 or jobInfo["jobId"] in jobList or jobInfo["name"] in jobList:
+            print("")
+            for key, value in jobInfo.items():
+                if "status" == key:
+                    continue  # Will be included with full history
+                if isinstance(value, list):
+                    print(key.upper(), *value, sep="\n")
+                elif value:
+                    print("{:10} {}".format(key.upper(), value))
 
 def dequeueJobs(queue, jobList: list[str]):
     """Remove a list of jobIds or job names from the queue."""
     if not jobList:
-        sys.exit("ERROR: No jobs specified to dequeue")
+        raise ValueError("ERROR: No jobs specified to dequeue")
     queuedJobs: dict[Path, dict] = {}
     queuedJobs.update(
         [(qFilePath, getJobInfo(qFilePath)) for qFilePath in queue.getQueuedJobs()]
     )
-
-    jobOptions = options
-    while len(jobList) > 0:
+    if not queuedJobs and queue.verbose >= 2:
+        print("No jobs queued", file=sys.stderr)
+    for job in jobList:
+        matched = 0
         for qFilePath, jobInfo in queuedJobs.items():
-            qJobId = jobInfo.get("jobId", "")
-            if jobList[0] == qJobId or jobOptions.name == jobInfo.get("name"):
+            if job == jobInfo.get("jobId") or job == jobInfo.get("name"):
                 # Matched either jobId or job name
+                matched += 1
                 if options.verbose >= 3:
                     print("Dequeing", options.info.format(**jobInfo))
                 queue.dequeue(qFilePath)
-                jobInfo.clear()  # Prevent repeated matches
-                break
-        else:  # Failed to find job
-            if options.verbose >= 1:
-                print(jobList[0], "is not queued", file=sys.stderr)
-        jobList.pop(0)
-        jobOptions = parseArguments(jobList)
-
+        if matched == 0 and queue.verbose >= 1:
+            print(job, "is not queued", file=sys.stderr)
 
 def humanDuration(seconds: float) -> str:
     for unit, per in ("days", 86400), ("hours", 3600), ("minutes", 60):
@@ -509,20 +483,36 @@ def humanDuration(seconds: float) -> str:
             return "{:.2g} {}".format(seconds / per, unit)
     return "{:.2g} seconds".format(seconds)
 
-
-if __name__ == "__main__":
+def qsub():
+    """Enqueue a new command"""
     options = parseArguments(sys.argv[1:])
     queue = Queue(**vars(options))
+    queue.enqueue(options.args)
 
+def qstat():
+    """Report status of the queue"""
+    options = parseArguments(sys.argv[1:])
+    queue = Queue(**vars(options))
     if options.full:
         # Report detailed information about jobs in the queue
-        fullDetails(queue, options.args)
-    elif options.dequeue:
-        # Dequeue these jobId numbers or job names
-        dequeueJobs(queue, options.args)
-    elif len(options.args) == 0:
-        # No arguments: Report a list of jobs in the queue
-        qstat(queue)
+        printDetails(queue, options.args)
     else:
-        # Enqueue a new command
-        queue.enqueue(options.args, name=options.name)
+        # Report list of jobs in queue
+        printStatus(queue, options.args)
+
+def qdel():
+    """Dequeue the specified jobId numbers or job names"""
+    options = parseArguments(sys.argv[1:])
+    queue = Queue(**vars(options))
+    dequeueJobs(queue, options.args)
+
+if __name__ == "__main__":
+    alias = Path(sys.argv[0]).stem
+    if alias == "qstat":
+        qstat()
+    elif alias == "qdel":
+        qdel()
+    else:
+        # default behavior is to add a job into the queue
+        qsub()
+
