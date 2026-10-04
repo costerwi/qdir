@@ -146,6 +146,14 @@ class Queue:
         """Create the queue, allowing parameters to override defaults"""
         for parameter, value in vars(default).items():
             setattr(self, parameter, kwargs.pop(parameter, value))
+        if not self.queue.is_dir():
+            raise FileNotFoundError(f"The QDIR directory {self.queue} does not exist")
+        if not os.access(self.queue, os.W_OK):
+            raise PermissionError(f"The QDIR directory {self.queue} is not writable")
+        if not self.interval > 0:
+            raise ValueError(
+                f"The QDIR_POLL_INTERVAL {options.interval} must be seconds greater than 0"
+            )
 
     def getQueuedJobs(self) -> list[Path]:
         """Return a list of qFilePath for currently queued jobs, sorted oldest to newest."""
@@ -504,14 +512,6 @@ def humanDuration(seconds: float) -> str:
 
 if __name__ == "__main__":
     options = parseArguments(sys.argv[1:])
-    if not options.queue.is_dir():
-        sys.exit(f"ERROR: The QDIR directory {options.queue} does not exist")
-    if not os.access(options.queue, os.W_OK):
-        sys.exit(f"ERROR: The QDIR directory {options.queue} is not writable")
-    if not options.interval > 0:
-        sys.exit(
-            f"The QDIR_POLL_INTERVAL {options.interval} must be seconds greater than 0"
-        )
     queue = Queue(**vars(options))
 
     if options.full:
