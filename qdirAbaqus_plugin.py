@@ -6,6 +6,8 @@ Carl Osterwisch, August 2026
 from __future__ import print_function, with_statement
 
 __version__ = "1.0.0"
+__author__ = "Carl Osterwisch"
+__url__ = "https://github.com/costerwi/qdir/"
 
 import os
 import sys
@@ -193,6 +195,12 @@ class QDirQueueMonitor(AFXDataDialog):
                 # dequeue the deleted job
                 self.queue.dequeue(qFilePath)
 
+    def getHelp(self, sender, sel, ptr):
+        "Open webbrowser to plugin helpUrl"
+        import webbrowser
+        webbrowser.open(__url__)
+        return 1
+
     def show(self):
         """Update the job data"""
         AFXDataDialog.show(self)
@@ -219,8 +227,9 @@ toolset.registerGuiMenuButton(
     buttonText="&QDir Job Queue Monitor...",
     object=QDirForm(toolset),
     kernelInitString="# QDir Queue Monitor {}".format(__version__),
-    author="Carl Osterwisch",
+    author=__author__,
     version=str(__version__),
     #applicableModules=["Job", "Visualization"],
+    helpUrl=__url__,
     description="Check status of jobs in the QDir Queue",
 )
