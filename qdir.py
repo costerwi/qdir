@@ -176,7 +176,7 @@ class Queue:
             # this job in the queue. This orphaned qFile may be removed.
             print(
                 "Removing orphaned queue file",
-                options.info.format(**getJobInfo(path)),
+                self.info.format(**getJobInfo(path)),
                 file=sys.stderr,
             )
             try:
@@ -237,7 +237,7 @@ class Queue:
             jobInfo["duration"] = humanDuration(perf_counter() - startTime)
             if self.verbose >= priority:
                 # Echo status to the terminal
-                print(options.status.format(**jobInfo))
+                print(self.status.format(**jobInfo))
             if file is not None:
                 # Record status history in specified qFile
                 print("{time} {status}".format(**jobInfo), file=file)
@@ -309,7 +309,7 @@ class Queue:
                 os.utime(qFilePath, (stat.st_atime, stat.st_mtime))
             except Exception:
                 pass  # ignore any status update exceptions
-            logFilePath = Path(options.output.format(**jobInfo))
+            logFilePath = Path(self.output.format(**jobInfo))
             with logFilePath.open("w") as logFile:
                 opts = {}
                 if os.name == "nt":
@@ -361,8 +361,6 @@ def getJobInfo(qFilePath: Path) -> dict:
         status = repr(e)
         jobInfo["history"].append(status)
         jobInfo["status"] = status
-        if options.verbose >= 3:
-            print(e, file=sys.stderr)
     return jobInfo
 
 def parseArguments(argv: list[str]) -> Namespace:
@@ -471,8 +469,8 @@ def dequeueJobs(queue, jobList: list[str]):
             if job == jobInfo.get("jobId") or job == jobInfo.get("name"):
                 # Matched either jobId or job name
                 matched += 1
-                if options.verbose >= 3:
-                    print("Dequeing", options.info.format(**jobInfo))
+                if queue.verbose >= 3:
+                    print("Dequeing", queue.info.format(**jobInfo))
                 queue.dequeue(qFilePath)
         if matched == 0 and queue.verbose >= 1:
             print(job, "is not queued", file=sys.stderr)
