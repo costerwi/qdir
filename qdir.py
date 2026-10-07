@@ -8,6 +8,7 @@ Each job will delete its own queue file upon completion so the next job can begi
 A shared queue directory should be specified on a multi-user system.
 
 Carl Osterwisch, January 2024
+Latest version: https://github.com/costerwi/qdir/
 """
 
 __version__ = "1.0.0"
