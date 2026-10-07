@@ -210,6 +210,8 @@ class Queue:
         import getpass
         import shutil
 
+        if len(cmd) < 1:
+            raise SyntaxError("Missing cmd")
         if self.verbose >= 1 and not shutil.which(cmd[0]):
             print("WARNING: {} is not in PATH".format(cmd[0]), file=sys.stderr)
 
@@ -510,7 +512,7 @@ if __name__ == "__main__":
         qstat()
     elif alias == "qdel":
         qdel()
-    else:
+    elif len(sys.argv) > 1:
         # default behavior is to add a job into the queue
         qsub()
 
