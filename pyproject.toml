@@ -1,0 +1,35 @@
+[project]
+name = "qdir"
+authors = [
+    { name="Carl Osterwisch", email="costerwi@gmail.com" },
+]
+description = "A very low overhead first-in, first-out job queue for the local machine"
+readme = "README.md"
+requires-python = ">=3.6"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "filelock",
+    "pywin32; sys_platform == 'win32'",
+]
+dynamic = ["version"]
+
+[project.scripts]
+qdel = "qdir.qdel:main"
+qstat = "qdir.qstat:main"
+qsub = "qdir.qsub:main"
+
+[project.urls]
+Homepage = "https://github.com/costerwi/qdir"
+Issues = "https://github.com/costerwi/qdir/issues"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "qdir.__version__"}

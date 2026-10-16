@@ -3,24 +3,6 @@
 This module is compatible with at least Abaqus 2019 thru 2026.
 This module works under Windows and Linux.
 
-Installation:
-
-Add the following lines to your Abaqus custom_v6.env file:
-
-import sys
-sys.path.append(r"C:/path/to/here/")  # directory of qdirAbaqus.py
-import qdirAbaqus
-qdirAbaqus.init(queues)
-run_mode = BATCH
-
-Usage:
-
-Abaqus jobs from the command line will submit to the queue by default.
-
-    abaqus job=whatever
-
-Abaqus CAE may submit to the queue by selecting it in the Job dialog.
-
 Carl Osterwisch, January 2024
 """
 
@@ -32,8 +14,10 @@ import os
 from string import Template
 from textwrap import dedent
 
-from driverQueues import Queue
 import uti
+from driverQueues import Queue
+
+dirname = os.path.dirname(os.path.normpath(__file__))
 
 
 def init(queues, queue=None):
@@ -50,7 +34,7 @@ def init(queues, queue=None):
 def initCAE(qName):
     """Register callback to add qName to Abaqus CAE Job queues"""
     try:
-        from abaqus import session, addImportCallback
+        from abaqus import addImportCallback, session
     except ImportError:
         return  # not running within CAE
 
@@ -62,6 +46,17 @@ def initCAE(qName):
     addImportCallback("job", addQueue)
 
 
+def submitCAEJobs(jobList=None, qName="qdir"):
+    """For specified CAE Jobs (all by default), set the queue and submit to queue"""
+    from abaqus import mdb
+
+    for job in mdb.jobs.values():
+        if not jobList or job.name in jobList:
+            print("Submitting {} to {}".format(job.name, qName))
+            job.setValues(queue=qName)
+            job.submit()
+
+
 class QDirQueue(Queue):
     """Creates a job script and submits it to a qdir queue."""
 
@@ -69,9 +64,6 @@ class QDirQueue(Queue):
         if hasattr(Queue, "__init__"):
             Queue.__init__(self)
         self.name = "qdir"
-        dirname = os.path.dirname(os.path.normpath(__file__))
-        path = os.environ.get("PATH", "")
-        os.environ["PATH"] = os.pathsep.join([path, dirname])
         if uti.getPlatform().startswith("win"):
             # Windows OS
             self.extension = ".cmd"  # job script filename extension
