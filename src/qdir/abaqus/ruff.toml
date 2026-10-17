@@ -1,0 +1,5 @@
+[lint]
+# These Abaqus files may be accessed by version prior to 2024 which used python2.7
+# They have been written to maintain compatibility with that old version so we
+# must ask ruff not to ignore its upgrade suggestions.
+ignore = ["UP"]
