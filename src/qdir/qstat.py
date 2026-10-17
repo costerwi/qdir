@@ -1,15 +1,5 @@
 #!/bin/env python3
-"""Implementation of a first-in, first-out job queue for the local machine.
-
-The queue is maintained as a directory of tiny job queue files.
-When a new job is submitted, this script will identify any existing job queue files and then add its own queue file to the directory.
-No job will begin until all the preceeding queue files are gone.
-Each job will delete its own queue file upon completion so the next job can begin.
-A shared queue directory should be specified on a multi-user system.
-
-Carl Osterwisch, January 2024
-Latest version: https://github.com/costerwi/qdir/
-"""
+"""Report currrent status of the qdir job queue"""
 
 import json
 import os
@@ -18,6 +8,7 @@ from pathlib import Path
 
 from qdir import Queue, default, parser
 
+parser.description = __doc__
 parser.add_argument(
     "-f",
     "--full",
@@ -34,8 +25,8 @@ default.info = os.environ.get("QDIR_INFO", "{jobId:8} {owner:12} {status:35} {na
 parser.add_argument(
     "-i",
     "--info",
-    help="Specify the format of job summary information "
-    "when --full and --json are not specified. "
+    help="Specify the shortened format of job information "
+    "when neither --full nor --json are specified. "
     f"Default is environment variable QDIR_INFO or {default.info!r}",
     default=default.info,
 )

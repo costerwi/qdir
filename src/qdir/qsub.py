@@ -1,15 +1,5 @@
 #!/bin/env python3
-"""Implementation of a first-in, first-out job queue for the local machine.
-
-The queue is maintained as a directory of tiny job queue files.
-When a new job is submitted, this script will identify any existing job queue files and then add its own queue file to the directory.
-No job will begin until all the preceeding queue files are gone.
-Each job will delete its own queue file upon completion so the next job can begin.
-A shared queue directory should be specified on a multi-user system.
-
-Carl Osterwisch, January 2024
-Latest version: https://github.com/costerwi/qdir/
-"""
+"""Submit a job (command) to the qdir job queue"""
 
 import os
 import subprocess
@@ -22,6 +12,7 @@ dprefix = os.environ.get(
     os.environ.get("PBS_DPREFIX", "(#|@?(?i:rem ))(QDIR|PBS)"),
 )  # regular expression prefix used to recognize optional file directives
 
+parser.description = __doc__
 default.name = os.environ.get("PBS_JOBNAME")
 parser.add_argument(
     "-N",
@@ -69,7 +60,7 @@ parser.add_argument(
 parser.add_argument(
     "cmd",
     nargs="+",
-    help="The command to enqueue and any optional arguments. "
+    help="The command to enqueue plus any optional arguments. "
     "This command must be in your PATH or explicitly specified. ",
 )
 

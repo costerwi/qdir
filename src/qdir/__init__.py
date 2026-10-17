@@ -6,12 +6,11 @@ When a new job is submitted, this script will identify any existing job queue fi
 No job will begin until all the preceeding queue files are gone.
 Each job will delete its own queue file upon completion so the next job can begin.
 A shared queue directory should be specified on a multi-user system.
-
-Carl Osterwisch, January 2024
-Latest version: https://github.com/costerwi/qdir/
 """
 
+__author__ = "Carl Osterwisch"
 __version__ = "1.0.0rc1"
+__url__ = "https://github.com/costerwi/qdir/"
 
 import os
 import signal
@@ -26,7 +25,7 @@ from filelock import FileLock
 
 default = Namespace
 
-parser = ArgumentParser(description=__doc__, epilog="Version " + __version__)
+parser = ArgumentParser(epilog=f"qdir {__version__} {__url__}")
 default.queue = Path(os.environ.get("QDIR_QUEUE", gettempdir()))
 parser.add_argument(
     "-q",

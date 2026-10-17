@@ -1,21 +1,12 @@
 #!/bin/env python3
-"""Implementation of a first-in, first-out job queue for the local machine.
-
-The queue is maintained as a directory of tiny job queue files.
-When a new job is submitted, this script will identify any existing job queue files and then add its own queue file to the directory.
-No job will begin until all the preceeding queue files are gone.
-Each job will delete its own queue file upon completion so the next job can begin.
-A shared queue directory should be specified on a multi-user system.
-
-Carl Osterwisch, January 2024
-Latest version: https://github.com/costerwi/qdir/
-"""
+"""Dequeue (remove) specified jobs from the qdir job queue"""
 
 import sys
 from pathlib import Path
 
 from qdir import Queue, parser
 
+parser.description = __doc__
 parser.add_argument(
     "job", nargs="+", help="The list of job Ids or job names to dequeue."
 )
