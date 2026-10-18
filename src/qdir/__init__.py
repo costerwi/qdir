@@ -72,7 +72,13 @@ class Queue:
             processIds = {str(pid) for pid in win32process.EnumProcesses()}
         else:
             procPath = Path("/proc")
-            processIds = {p.stem for p in procPath.iterdir() if p.stem.isnumeric()}
+            if procPath.is_dir():
+                processIds = {p.stem for p in procPath.iterdir() if p.stem.isnumeric()}
+            else:
+                c = subprocess.run(
+                    ["pgrep", "y"], stdout=subprocess.PIPE, text=True, check=True
+                )
+                processIds = {pid for pid in c.stdout.strip().split()}
 
         def is_qFile(path):
             """Verify the path is an active job file with a matching process id"""
