@@ -12,7 +12,7 @@ from subprocess import PIPE, Popen
 
 from abaqusGui import *
 
-if isinstance("unicode", str):
+if isinstance(u"unicode", str):
 
     def a(unicodeString):
         "Do nothing for Python3, Abaqus >=2024"
