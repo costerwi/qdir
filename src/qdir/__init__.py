@@ -9,7 +9,7 @@ A shared queue directory should be specified on a multi-user system.
 """
 
 __author__ = "Carl Osterwisch"
-__version__ = "1.0.0rc1"
+__version__ = "1.0.0rc2"
 __url__ = "https://github.com/costerwi/qdir/"
 
 import os
