@@ -48,13 +48,16 @@ def initCAE(qName):
 
 def submitCAEJobs(jobList=None, qName="qdir"):
     """For specified CAE Jobs (all by default), set the queue and submit to queue"""
-    from abaqus import mdb
+    import abaqus
 
-    for job in mdb.jobs.values():
+    for job in abaqus.mdb.jobs.values():
         if not jobList or job.name in jobList:
-            print("Submitting {} to {}".format(job.name, qName))
-            job.setValues(queue=qName)
-            job.submit()
+            try:
+                print("Submitting {} to {}".format(job.name, qName))
+                job.setValues(queue=qName)
+                job.submit()
+            except abaqus.AbaqusException as e:
+                print(e)
 
 
 class QDirQueue(Queue):
