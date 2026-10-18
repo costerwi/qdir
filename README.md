@@ -2,10 +2,13 @@
 A very low overhead first-in, first-out job queue for the local machine
 
 The queue is maintained as a directory of tiny job queue files.
-When a new job is submitted, this script will identify any existing job queue files and then add its own queue file to the directory.
+When a new job is submitted, it will identify any existing job queue files and then add its own queue file to the directory.
 No job will begin until all the preceeding queue files are gone.
 Each job will delete its own queue file upon completion so the next job can begin.
-A shared queue directory can be specified on a multi-user system.
+There is a polling interval (default 5 seconds)
+where the job checks to see if its predecessor have finished before starting.
+A shared queue directory can be specified on a multi-user system to coordinate
+job execution.
 On Linux this is `/tmp` by default.
 
 Any command may be submitted to the job queue using qsub (see usage below).
@@ -20,6 +23,10 @@ python3 -m pip install qdir
 ```
 
 See [here](https://pip.pypa.io/en/stable/installation/) if there is "no module named pip."
+
+If you see a warning that the script directory is not in your PATH then you'll need to
+add the specified directory to your PATH in order to use the command line tools.
+Otherwise, [see below](#usage-without-script-directory-in-path).
 
 ## Abaqus Finite Element Analysis (FEA) extras
 The package includes additional files to help Abaqus users submit and monitor the qdir job queue.
@@ -68,6 +75,13 @@ For example, to delete job 12343:
 ```bash
 qdel 12343
 ```
+
+## Usage without script directory in PATH
+The `qsub`, `qstat`, and `qdel` scripts are shortcuts to call python3 module methods.
+These scripts will not be available at the command line if their directory is not in the PATH.
+It's most convenient to add the directory to the PATH but it should also be
+possible to run the methods directly with some additional typing,
+such as `python3 -m qdir.qstat` for `qstat`
 
 ## Abaqus extras
 Submit Abaqus jobs as usual from the command line:

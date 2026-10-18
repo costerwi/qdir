@@ -48,13 +48,16 @@ def initCAE(qName):
 
 def submitCAEJobs(jobList=None, qName="qdir"):
     """For specified CAE Jobs (all by default), set the queue and submit to queue"""
-    from abaqus import mdb
+    import abaqus
 
-    for job in mdb.jobs.values():
+    for job in abaqus.mdb.jobs.values():
         if not jobList or job.name in jobList:
-            print("Submitting {} to {}".format(job.name, qName))
-            job.setValues(queue=qName)
-            job.submit()
+            try:
+                print("Submitting {} to {}".format(job.name, qName))
+                job.setValues(queue=qName)
+                job.submit()
+            except abaqus.AbaqusException as e:
+                print(e)
 
 
 class QDirQueue(Queue):
@@ -158,8 +161,7 @@ class QDirQueue(Queue):
     def submit(self, options, env):
         """Create Abaqus job script and submit it to qdir"""
         scriptName = self.createJobScript(options, env)
-        cmd = "qsub {!r}".format(scriptName)
+        cmd = "python3 -m qdir.qsub {!r}".format(scriptName)
         localenv = env.copy()
-        if "PYTHONPATH" in localenv:
-            del localenv["PYTHONPATH"]  # avoid version conflicts
+        localenv["PYTHONPATH"] = ""  # remove Abaqus modified PYTHONPATH
         return self.spawn(cmd, localenv, options.get("verbose", 0))

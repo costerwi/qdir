@@ -12,7 +12,7 @@ from subprocess import PIPE, Popen
 
 from abaqusGui import *
 
-if isinstance("unicode", str):
+if isinstance(u"unicode", str):  # fmt: skip
 
     def a(unicodeString):
         "Do nothing for Python3, Abaqus >=2024"
@@ -77,7 +77,7 @@ class QDirQueueMonitor(AFXDataDialog):
     def qstat(self):
         """Collect jobInfo of currently queued jobs"""
         self.jobData.clear()
-        cmd = ["qstat", "--json"]
+        cmd = ["python3", "-m", "qdir.qstat", "--json"]
         env = os.environ.copy()
         env["PYTHONPATH"] = ""  # remove Abaqus modified PYTHONPATH
         try:
@@ -164,7 +164,7 @@ class QDirQueueMonitor(AFXDataDialog):
 
     def onDelete(self, sender, sel, ptr):
         """Dequeue jobs for selected table rows"""
-        cmd = ["qdel"]
+        cmd = ["python3", "-m", "qdir.qdel"]
         cmd.extend(
             self.table.getItemText(row, column=0)
             for row in range(1, self.table.getNumRows())

@@ -9,7 +9,7 @@ A shared queue directory should be specified on a multi-user system.
 """
 
 __author__ = "Carl Osterwisch"
-__version__ = "1.0.0rc1"
+__version__ = "1.0.0rc2"
 __url__ = "https://github.com/costerwi/qdir/"
 
 import os
@@ -60,6 +60,11 @@ class Queue:
 
     def getQueuedJobs(self) -> list[Path]:
         """Return a list of qFilePath for currently queued jobs, sorted oldest to newest."""
+
+        queuedJobs = [filePath for filePath in self.queue.glob("*" + qFileSuffix)]
+        if len(queuedJobs) == 0:
+            return queuedJobs  # easy answer
+
         # Collecct a set of active process ids
         if os.name == "nt":
             import win32process
@@ -67,7 +72,13 @@ class Queue:
             processIds = {str(pid) for pid in win32process.EnumProcesses()}
         else:
             procPath = Path("/proc")
-            processIds = {p.stem for p in procPath.iterdir() if p.stem.isnumeric()}
+            if procPath.is_dir():
+                processIds = {p.stem for p in procPath.iterdir() if p.stem.isnumeric()}
+            else:
+                c = subprocess.run(
+                    ["pgrep", "y"], stdout=subprocess.PIPE, text=True, check=True
+                )
+                processIds = {pid for pid in c.stdout.strip().split()}
 
         def is_qFile(path):
             """Verify the path is an active job file with a matching process id"""
@@ -90,11 +101,8 @@ class Queue:
             except OSError as e:
                 print(e, file=sys.stderr)
 
-        queuedJobs = [
-            filePath
-            for filePath in self.queue.glob("*" + qFileSuffix)
-            if is_qFile(filePath)
-        ]
+        # Filter valid qFiles
+        queuedJobs = [filePath for filePath in queuedJobs if is_qFile(filePath)]
         return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
 
     def getJobInfo(self, qFilePath: Path) -> dict:
