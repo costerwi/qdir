@@ -60,6 +60,11 @@ class Queue:
 
     def getQueuedJobs(self) -> list[Path]:
         """Return a list of qFilePath for currently queued jobs, sorted oldest to newest."""
+
+        queuedJobs = [filePath for filePath in self.queue.glob("*" + qFileSuffix)]
+        if len(queuedJobs) == 0:
+            return queuedJobs  # easy answer
+
         # Collecct a set of active process ids
         if os.name == "nt":
             import win32process
@@ -90,11 +95,8 @@ class Queue:
             except OSError as e:
                 print(e, file=sys.stderr)
 
-        queuedJobs = [
-            filePath
-            for filePath in self.queue.glob("*" + qFileSuffix)
-            if is_qFile(filePath)
-        ]
+        # Filter valid qFiles
+        queuedJobs = [filePath for filePath in queuedJobs if is_qFile(filePath)]
         return sorted(queuedJobs, key=lambda qFilePath: qFilePath.stat().st_mtime)
 
     def getJobInfo(self, qFilePath: Path) -> dict:
