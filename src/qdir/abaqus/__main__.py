@@ -15,7 +15,7 @@ sys.path.append(r"{}")  # directory of qdir_submit.py
 import qdir_submit
 qdir_submit.init(queues)
 plugin_central_dir += os.pathsep + qdir_submit.dirname
-run_mode = BATCH  # command line will submit to queue by default"""
+run_mode = BATCH  # command line will submit to qdir by default"""
 
 parser = ArgumentParser(description=__doc__)
 parser.add_argument(
