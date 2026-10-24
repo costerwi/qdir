@@ -43,7 +43,7 @@ class QDirQueueMonitor(AFXDataDialog):
         self.appendActionButton(self.DISMISS)
         self.updateTimer = None
         self.headings = ("jobId", "status", "name")
-        self.jobData = {}
+        self.jobData = []  # active jobs
 
         sp = FXSplitter(self, LAYOUT_FILL_X | LAYOUT_FILL_Y | SPLITTER_VERTICAL)
         self.table = AFXTable(
@@ -85,7 +85,7 @@ class QDirQueueMonitor(AFXDataDialog):
 
     def qstat(self):
         """Collect jobInfo of currently queued jobs"""
-        self.jobData.clear()
+        self.jobData = []
         cmd = ["python3", "-m", "qdir.qstat", "--json"]
         env = os.environ.copy()
         env["PYTHONPATH"] = ""  # remove Abaqus modified PYTHONPATH
@@ -105,17 +105,15 @@ class QDirQueueMonitor(AFXDataDialog):
                 "stdout": stdout,
                 "stderr": stderr,
             }
-            self.jobData["1"] = "1", jobInfo
+            self.jobData.append(jobInfo)
         else:
-            queuedJobs = json.loads(stdout)
-            for qFilePath, jobInfo in queuedJobs.items():
-                self.jobData[jobInfo["jobId"]] = qFilePath, jobInfo
+            self.jobData.extend(json.loads(stdout))
 
     def detailedText(self, jobInfo):
         """Summarize full job status"""
         h = []
         for key, value in jobInfo.items():
-            if "status" == key:
+            if key in ("status", "position"):
                 continue
             if not value:
                 continue
@@ -129,10 +127,13 @@ class QDirQueueMonitor(AFXDataDialog):
     def updateTable(self, *args):
         """Update manager with list of currently queued jobs"""
         row = self.table.getCurrentRow()
-        if row < 1:
-            selected = None  # nothing is selected
-        else:
-            selected = self.table.getItemText(row, column=0)
+        selected = None
+        if row > 0:
+            try:
+                c = self.headings.index("jobId")
+                selected = self.table.getItemText(row, column=1 + c)
+            except ValueError:
+                pass
         self.qstat()
         diff = len(self.jobData) + 1 - self.table.getNumRows()
         if diff < 0:
@@ -148,8 +149,8 @@ class QDirQueueMonitor(AFXDataDialog):
                 notify=FALSE,
             )
         jobDetails = ""
-        for row, (qFilePath, jobInfo) in enumerate(self.jobData.values(), 1):
-            for column, heading in enumerate(self.headings):
+        for row, jobInfo in enumerate(self.jobData, 1):
+            for column, heading in enumerate(self.headings, 1):
                 self.table.setItemValue(
                     row=row,
                     column=column,
@@ -166,8 +167,7 @@ class QDirQueueMonitor(AFXDataDialog):
         """Show the details for selected job"""
         row = sender.getCurrentRow()
         if row > 0:
-            selected = self.table.getItemText(row, column=0)
-            _qFilePath, jobInfo = self.jobData.get(selected, ("", {}))
+            jobInfo = self.jobData[row - 1]
             jobDetails = self.detailedText(jobInfo)
             self.jobDetails.setText(a(jobDetails))
 
