@@ -49,9 +49,9 @@ class QDirQueueMonitor(AFXDataDialog):
         self.table = AFXTable(
             p=sp,
             numVisRows=6,
-            numVisColumns=len(self.headings),
+            numVisColumns=1 + len(self.headings),
             numRows=1,
-            numColumns=len(self.headings),
+            numColumns=1 + len(self.headings),
             tgt=self,
             sel=self.ID_TABLE,
             opts=AFXTABLE_NORMAL | AFXTABLE_ROW_MODE,
@@ -59,12 +59,21 @@ class QDirQueueMonitor(AFXDataDialog):
         FXMAPFUNC(self, SEL_SELECTED, self.ID_TABLE, QDirQueueMonitor.onSelected)
         FXMAPFUNC(self, SEL_DELETED, self.ID_TABLE, QDirQueueMonitor.onDelete)
         self.table.setLeadingRows(numRows=1)
+        self.table.setLeadingColumns(numColumns=1)
         self.table.setLeadingRowLabels("\t".join([h.title() for h in self.headings]))
-        self.table.setColumnWidth(column=0, width=0)  # Hide the jobIds
-        self.table.setColumnWidthInChars(column=1, numChars=30)
+        try:
+            c = self.headings.index("jobId")
+            self.table.setColumnWidth(column=1 + c, width=0)  # Hide the jobIds
+        except ValueError:
+            pass
+        try:
+            c = self.headings.index("status")
+            self.table.setColumnWidthInChars(column=1 + c, numChars=30)
+        except ValueError:
+            pass
         self.table.setStretchableColumn(
-            len(self.headings) - 1
-        )  # Expand name as necessary
+            len(self.headings)
+        )  # Last column expands with dialog
         self.table.setPopupOptions(AFXTable.POPUP_DELETE_ROW)
         self.jobDetails = FXText(p=sp, opts=TEXT_READONLY | LAYOUT_FILL_Y)
         self.jobDetails.setVisRows(5)
@@ -164,9 +173,13 @@ class QDirQueueMonitor(AFXDataDialog):
 
     def onDelete(self, sender, sel, ptr):
         """Dequeue jobs for selected table rows"""
+        try:
+            c = self.headings.index("jobId")
+        except ValueError:
+            return  # missing jobId
         cmd = ["python3", "-m", "qdir.qdel"]
         cmd.extend(
-            self.table.getItemText(row, column=0)
+            self.table.getItemText(row, column=1 + c)
             for row in range(1, self.table.getNumRows())
             if self.table.isRowSelected(row)
         )
