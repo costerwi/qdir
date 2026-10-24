@@ -1,31 +1,32 @@
 # qdir
 A very low overhead first-in, first-out job queue for the local machine
 
-The queue is maintained as a directory of tiny job queue files.
-When a new job is submitted, it will identify any existing job queue files and then add its own queue file to the directory.
-No job will begin until all the preceeding queue files are gone.
-Each job will delete its own queue file upon completion so the next job can begin.
+The queue is maintained as a directory of tiny job status files.
+When a new job is submitted, it will identify any existing status files and then add its own to the directory.
+The job will not launch its command until all the preceeding status files are gone.
+Each job will delete its own status file upon completion so the next job can begin.
 There is a polling interval (default 5 seconds)
-where the job checks to see if its predecessor have finished before starting.
+when the job checks to see if its predecessors have finished before launching its command.
 A shared queue directory can be specified on a multi-user system to coordinate
 job execution.
 On Linux this is `/tmp` by default.
 
-Any command may be submitted to the job queue using qsub (see usage below).
-You may check the status of the queue (qstat) and remove jobs (qdel).
+Any command may be submitted to the job queue using qsub
+(see [usage](#usage) below).
+There are also tools to check the status of the queue (qstat) and remove jobs (qdel).
 
 # Installation
-Requires python3 running on Windows or Linux.
+Requires python3 on Windows, Linux, or MacOS.
 One way to get python3 on Windows is through the [Microsoft Store](https://apps.microsoft.com/detail/9PNRBTZXMB4Z).
-Here is the command to install qdir once you have python3 available:
+Here is the command to install qdir once python3 is available:
 ```bash
 python3 -m pip install qdir
 ```
 
 See [here](https://pip.pypa.io/en/stable/installation/) if there is "no module named pip."
 
-If you see a warning that the script directory is not in your PATH then you'll need to
-add the specified directory to your PATH in order to use the command line tools.
+If there is a warning that the script directory is not in the PATH then
+it must be added in order to use the command line tools.
 Otherwise, [see below](#usage-without-script-directory-in-path).
 
 ## Abaqus Finite Element Analysis (FEA) extras
@@ -35,16 +36,18 @@ Use the following command to configure Abaqus after qdir itself has been install
 python3 -m qdir.abaqus install
 ```
 
-By default, the necessary settings are appended to the end of your user `abaqus_v6.env` file.
-To uninstall you may removed the settings manually or with this command:
+By default, the necessary settings are appended to the end of the user `abaqus_v6.env` file.
+The following command may be used to remove qdir settings for Abaqus:
 ```bash
 python3 -m qdir.abaqus uninstall
 ```
 
 # Usage
+Below is a brief overview of usage.
+The command line tools accept a `-h` or `--help` argument to list their full options.
 
 ## Command line job submission
-Submit commands or scripts to the queue using the `qsub` command.
+Submit commands or job scripts to the queue using the `qsub` command.
 For example, on Linux:
 ```bash
 qsub ./myJobFile.sh
@@ -63,32 +66,29 @@ Check status with the `qstat` command, for example:
 ```bash
 qstat
 ```
-or, for full details:
-```bash
-qstat -f
-```
 
 ## Command line job removal
-First use the `qstat` command above to find the jobIds and job names in the queue.
-Delete or kill jobs with the `qdel` command followed by a jobId or job name.
+First use the `qstat` command above to find the job Ids and job names in the queue.
+Delete or kill jobs with the `qdel` command followed by its jobId or job name.
 For example, to delete job 12343:
 ```bash
 qdel 12343
 ```
 
 ## Usage without script directory in PATH
-The `qsub`, `qstat`, and `qdel` scripts are shortcuts to call python3 module methods.
+The `qsub`, `qstat`, and `qdel` scripts are shortcuts to call python3 methods.
 These scripts will not be available at the command line if their directory is not in the PATH.
-It's most convenient to add the directory to the PATH but it should also be
+It's most convenient to add the directory to the PATH but it is also
 possible to run the methods directly with some additional typing,
-such as `python3 -m qdir.qstat` for `qstat`
+such as `python3 -m qdir.qstat` to execute `qstat`
 
 ## Abaqus extras
 Submit Abaqus jobs as usual from the command line:
 ```bash
 abaqus job=whatever
 ```
-This will invoke the `qdir_submit.py` module to create a job script and submit it to qdir.
+Internally this will invoke the `qdir_submit.py` module to create a job script
+and submit it to qdir.
 
 You may submit jobs within Abaqus CAE by selecting `qdir` as the Job's queue before submitting.
 You may check the queue status within CAE in the menu `Plug-ins > QDir Job Queue Monitor...`
@@ -96,7 +96,8 @@ Click on a Job to see more detailed information.
 Right-click on a Job to expose the menu allowing you to delete the Job.
 
 ## Customization
-Most parameters used by the script may be customized with command line options, system environment variables, or directives within the job file itself.
+Most parameters used by qdir may be customized with command line options,
+system environment variables, or directives within the job script itself.
 
 | Option | Description | Default |
 |--------|-------------|---------|

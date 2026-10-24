@@ -88,8 +88,9 @@ def printDetails(queue, jobList: list[str]):
     if not queuedJobs and queue.verbose >= 2:
         print("No jobs queued")
 
-    for qFilePath in queuedJobs:
+    for position, qFilePath in enumerate(queuedJobs, 1):
         jobInfo = queue.getJobInfo(qFilePath)
+        jobInfo["position"] = position
         if (
             len(jobList) == 0
             or jobInfo["jobId"] in jobList
@@ -107,15 +108,16 @@ def printDetails(queue, jobList: list[str]):
 
 def printJSON(queue, jobList: list[str]):
     """Output detailed queue status in JSON format"""
-    jobs = {}
-    for qFilePath in queue.getQueuedJobs():
+    jobs = []
+    for position, qFilePath in enumerate(queue.getQueuedJobs(), 1):
         jobInfo = queue.getJobInfo(qFilePath)
+        jobInfo["position"] = position
         if (
             len(jobList) == 0
             or jobInfo["jobId"] in jobList
             or jobInfo["name"] in jobList
         ):
-            jobs[str(qFilePath)] = jobInfo
+            jobs.append(jobInfo)
     print(json.dumps(jobs, indent=2))
 
 

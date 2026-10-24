@@ -1,15 +1,20 @@
 #!/bin/env python3
-"""Implementation of a first-in, first-out job queue for the local machine.
+"""A very low overhead first-in, first-out job queue for the local machine
 
-The queue is maintained as a directory of tiny job queue files.
-When a new job is submitted, this script will identify any existing job queue files and then add its own queue file to the directory.
-No job will begin until all the preceeding queue files are gone.
-Each job will delete its own queue file upon completion so the next job can begin.
-A shared queue directory should be specified on a multi-user system.
+The queue is maintained as a directory of tiny job status files.
+When a new job is submitted, it will identify any existing status files and
+then add its own to the directory.
+The job will not launch its command until all the preceeding status files are gone.
+Each job will delete its own status file upon completion so the next job can begin.
+There is a polling interval (default 5 seconds)
+when the job checks to see if its predecessors have finished before launching its command.
+A shared queue directory can be specified on a multi-user system to coordinate
+job execution.
+On Linux this is `/tmp` by default.
 """
 
 __author__ = "Carl Osterwisch"
-__version__ = "1.0.0rc2"
+__version__ = "1.0.0"
 __url__ = "https://github.com/costerwi/qdir/"
 
 import os
