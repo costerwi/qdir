@@ -53,6 +53,27 @@ parser.add_argument(
 qFileSuffix = os.environ.get("QDIR_SUFFIX", ".qdir")  # suffix for queue files
 
 
+if os.name == "nt":
+
+    def winOwner(self) -> str:
+        "Return name of the WindowsPath owner"
+        try:
+            import win32security
+        except ImportError:
+            return "unknown"
+        sd = win32security.GetFileSecurity(
+            str(self), win32security.OWNER_SECURITY_INFORMATION
+        )
+        owner_sid = sd.GetSecurityDescriptorOwner()
+        name, _domain, _type = win32security.LookupAccountSid(None, owner_sid)
+        return name
+
+    try:
+        _ = Path(".").owner()  # test if Path has owner method
+    except NotImplementedError:
+        Path.owner = winOwner  # monkey patch if needed
+
+
 class Queue:
     def __init__(self, **kwargs):
         """Create the queue, allowing parameters to override defaults"""

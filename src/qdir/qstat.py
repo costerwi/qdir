@@ -4,7 +4,6 @@
 import json
 import os
 import sys
-from pathlib import Path
 
 from qdir import Queue, default, parser
 
@@ -36,27 +35,6 @@ parser.add_argument(
     help="An optional list of job Ids or job names to get status. "
     "If no jobs are specified then all currently queued jobs will be listed.",
 )
-
-
-if os.name == "nt":
-
-    def winOwner(self) -> str:
-        "Return name of the WindowsPath owner"
-        try:
-            import win32security
-        except ImportError:
-            return "unknown"
-        sd = win32security.GetFileSecurity(
-            str(self), win32security.OWNER_SECURITY_INFORMATION
-        )
-        owner_sid = sd.GetSecurityDescriptorOwner()
-        name, _domain, _type = win32security.LookupAccountSid(None, owner_sid)
-        return name
-
-    try:
-        _ = Path(".").owner()  # test if Path has owner method
-    except NotImplementedError:
-        Path.owner = winOwner  # monkey patch if needed
 
 
 def printStatus(queue, jobList: list[str]):
