@@ -27,7 +27,9 @@ See [here](https://pip.pypa.io/en/stable/installation/) if there is "no module n
 
 If there is a warning that the script directory is not in the PATH then
 it must be added in order to use the command line tools.
-Otherwise, [see below](#usage-without-script-directory-in-path).
+Otherwise, [see below without modifying PATH](#usage-without-script-directory-in-path).
+
+Check the installation with `python3 -m qdir`
 
 ## Abaqus Finite Element Analysis (FEA) extras
 The package includes additional files to help Abaqus users submit and monitor the qdir job queue.
