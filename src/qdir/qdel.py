@@ -2,7 +2,6 @@
 """Dequeue (remove) specified jobs from the qdir job queue"""
 
 import sys
-from pathlib import Path
 
 from qdir import Queue, parser
 
@@ -14,13 +13,9 @@ parser.add_argument(
 
 def dequeueJobs(queue, jobList: list[str]):
     """Remove a list of jobIds or job names from the queue."""
-    queuedJobs: dict[Path, dict] = {}
-    queuedJobs.update(
-        [
-            (qFilePath, queue.getJobInfo(qFilePath))
-            for qFilePath in queue.getQueuedJobs()
-        ]
-    )
+    queuedJobs = {
+        qFilePath: queue.getJobInfo(qFilePath) for qFilePath in queue.getQueuedJobs()
+    }
     if not queuedJobs and queue.verbose >= 2:
         print("No jobs queued", file=sys.stderr)
     for job in jobList:
