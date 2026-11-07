@@ -1,29 +1,34 @@
 # qdir
 A very low overhead first-in, first-out job queue for the local machine
 
-The queue is maintained as a directory of tiny job status files.
-When a new job is submitted, it will identify any existing status files and then add its own to the directory.
-The job will not launch its command until all the preceeding status files are gone.
-Each job will delete its own status file upon completion so the next job can begin.
-There is a polling interval (default 5 seconds)
-when the job checks to see if its predecessors have finished before launching its command.
-A shared queue directory can be specified on a multi-user system to coordinate
-job execution.
-On Linux this is `/tmp` by default.
+This type of queue is ideal when you have multiple programs (jobs)
+that must run sequentially rather than in parallel,
+often due to resource constraints or dependencies.
+For example, to run several finite element analysis models in sequence.
+You can add jobs to the queue at any time,
+monitor the current job list and remove specific jobs as necessary.
+(see [usage](#usage) below)
 
-Any command may be submitted to the job queue using qsub
-(see [usage](#usage) below).
-There are also tools to check the status of the queue (qstat) and remove jobs (qdel).
+The queue operates by maintaining a directory of small job status files.
+When a new job is added, it creates its own status file and then
+waits for all preceding files to clear before running its command.
+By default, jobs check every 5 seconds for their turn to run.
+Once a job finishes, it deletes its status file, allowing the next one to start.
+
+The queue directory may be set to a shared location on multi-user systems
+(`/tmp` by default in Linux)
+in order to coordinate sequential execution among all users.
 
 # Installation
 Requires python3 on Windows, Linux, or MacOS.
-One way to get python3 on Windows is through the [Microsoft Store](https://apps.microsoft.com/detail/9PNRBTZXMB4Z).
+One way to get python3 on Windows is through the
+[Microsoft Store](https://apps.microsoft.com/detail/9PNRBTZXMB4Z).
 Here is the command to install qdir once python3 is available:
 ```bash
 python3 -m pip install qdir
 ```
 
-See [here](https://pip.pypa.io/en/stable/installation/) if there is "no module named pip."
+See [installation of pip](https://pip.pypa.io/en/stable/installation/) if there is "no module named pip."
 
 If there is a warning that the script directory is not in the PATH then
 it must be added in order to use the command line tools.
@@ -59,7 +64,8 @@ or on Windows:
 qsub myJobFile.cmd
 ```
 
-Any printed output from the command will be saved to a file based on the job name with the job Id appended to the end.
+Any printed output from the command (stdout and stderr) will be saved to a new
+file whose name has the job Id appended to the end.
 
 Display command options with `qsub -h`
 
@@ -76,11 +82,16 @@ For example, to delete job 12343:
 ```bash
 qdel 12343
 ```
+The jobId is a number matching its process ID.
+This means on Linux you may terminate or remove a job from queue by
+killing that process ID, for example, `kill 12343`
+Also, deleting a job's status file will terminate or remove the job from queue.
 
 ## Usage without script directory in PATH
 The `qsub`, `qstat`, and `qdel` scripts are shortcuts to call python3 methods.
-These scripts will not be available at the command line if their directory is not in the PATH.
-It's most convenient to add the directory to the PATH but it is also
+These scripts will not be available at the command line if
+the directory where pip installed them is not in the PATH.
+It's most convenient to add this directory to the PATH but it is also
 possible to run the methods directly with some additional typing,
 such as `python3 -m qdir.qstat` to execute `qstat`
 
@@ -95,7 +106,7 @@ and submit it to qdir.
 You may submit jobs within Abaqus CAE by selecting `qdir` as the Job's queue before submitting.
 You may check the queue status within CAE in the menu `Plug-ins > QDir Job Queue Monitor...`
 Click on a Job to see more detailed information.
-Right-click on a Job to expose the menu allowing you to delete the Job.
+Right-click on a Job to open a popup menu allowing you to delete the Job.
 
 ## Customization
 Most parameters used by qdir may be customized with command line options,
