@@ -1,16 +1,17 @@
 #!/bin/env python3
 """A very low overhead first-in, first-out job queue for the local machine
 
-This type of queue is ideal when you have multiple programs or commands
+This type of queue is ideal when you have multiple programs (jobs)
 that must run sequentially rather than in parallel,
 often due to resource constraints or dependencies.
-You can easily monitor the current job list and remove items as necessary.
-(see [usage](#usage) below)
+For example, to run several finite element analysis models in sequence.
+You can add jobs to the queue at any time,
+monitor the current job list and remove specific jobs as necessary.
 
-The queue operates using a directory of small job status files.
+The queue operates by maintaining a directory of small job status files.
 When a new job is added, it creates its own status file and then
-waits for preceding files to clear before running its command.
-By default, jobs check for completion every 5 seconds.
+waits for all preceding files to clear before running its command.
+By default, jobs check every 5 seconds for their turn to run.
 Once a job finishes, it deletes its status file, allowing the next one to start.
 
 The queue directory may be set to a shared location on multi-user systems
