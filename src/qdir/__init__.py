@@ -1,16 +1,20 @@
 #!/bin/env python3
 """A very low overhead first-in, first-out job queue for the local machine
 
-The queue is maintained as a directory of tiny job status files.
-When a new job is submitted, it will identify any existing status files and
-then add its own to the directory.
-The job will not launch its command until all the preceeding status files are gone.
-Each job will delete its own status file upon completion so the next job can begin.
-There is a polling interval (default 5 seconds)
-when the job checks to see if its predecessors have finished before launching its command.
-A shared queue directory can be specified on a multi-user system to coordinate
-job execution.
-On Linux this is `/tmp` by default.
+This type of queue is ideal when you have multiple programs or commands
+that must run sequentially rather than in parallel,
+often due to resource constraints or dependencies.
+You can easily monitor the current job list and remove items as necessary.
+(see [usage](#usage) below)
+
+The queue operates using a directory of small job status files.
+When a new job is added, it creates its own status file and then
+waits for preceding files to clear before running its command.
+By default, jobs check for completion every 5 seconds.
+Once a job finishes, it deletes its status file, allowing the next one to start.
+
+The queue directory may be set to a shared location on multi-user systems
+in order to coordinate sequential execution among all users.
 """
 
 __author__ = "Carl Osterwisch"
